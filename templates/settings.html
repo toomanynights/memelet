@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Memelet</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .back-button {
+            display: inline-block;
+            color: white;
+            text-decoration: none;
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            transition: background 0.3s ease;
+        }
+        
+        .back-button:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        h1 {
+            color: white;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            text-align: center;
+        }
+        
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        h2 {
+            color: #2d3748;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+        
+        .message {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        
+        .message.success {
+            background: #C6F6D5;
+            color: #22543D;
+        }
+        
+        .message.error {
+            background: #FED7D7;
+            color: #742A2A;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-warning {
+            background: #ed8936;
+            color: white;
+        }
+        
+        .btn-warning:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(237, 137, 54, 0.4);
+        }
+        
+        .log-container {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            max-height: 600px;
+            overflow-y: auto;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .log-container::-webkit-scrollbar {
+            width: 10px;
+        }
+        
+        .log-container::-webkit-scrollbar-track {
+            background: #2d3748;
+            border-radius: 5px;
+        }
+        
+        .log-container::-webkit-scrollbar-thumb {
+            background: #4a5568;
+            border-radius: 5px;
+        }
+        
+        .log-container::-webkit-scrollbar-thumb:hover {
+            background: #718096;
+        }
+        
+        .action-description {
+            color: #718096;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-button">← Back to Collection</a>
+        
+        <h1>⚙️ Settings</h1>
+        
+        <div class="section">
+            <h2>Manual Actions</h2>
+            
+            {% if message %}
+            <div class="message {{ message_type }}">
+                {{ message }}
+            </div>
+            {% endif %}
+            
+            <p class="action-description">
+                Trigger manual scans and processing. The automated scan runs every hour.
+            </p>
+            
+            <form method="POST" style="display: inline;">
+                <input type="hidden" name="action" value="scan">
+                <button type="submit" class="btn btn-primary">
+                    🔍 Scan & Process New Memes
+                </button>
+            </form>
+            
+            <form method="POST" style="display: inline;">
+                <input type="hidden" name="action" value="retry_errors">
+                <button type="submit" class="btn btn-warning">
+                    🔄 Reprocess Errors
+                </button>
+            </form>
+        </div>
+        
+        <div class="section">
+            <h2>Latest Scan Activity</h2>
+            <p class="action-description">
+                Most recent scan log entry (auto-refreshes every 10 seconds)
+            </p>
+            <div class="log-container" id="log-content">{{ log_content }}</div>
+        </div>
+    </div>
+    
+    <script>
+        // Auto-refresh log every 10 seconds
+        setInterval(function() {
+            fetch('/settings')
+                .then(response => response.text())
+                .then(html => {
+                    // Parse the HTML to extract just the log content
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const newLogContent = doc.getElementById('log-content').textContent;
+                    document.getElementById('log-content').textContent = newLogContent;
+                })
+                .catch(error => console.error('Error refreshing log:', error));
+        }, 10000);
+    </script>
+</body>
+</html>

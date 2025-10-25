@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ meme.file_name }} - Memelet</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .back-button {
+            display: inline-block;
+            color: white;
+            text-decoration: none;
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            transition: background 0.3s ease;
+        }
+        
+        .back-button:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .content-wrapper {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 20px;
+        }
+        
+        @media (max-width: 968px) {
+            .content-wrapper {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .image-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .meme-image {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            display: block;
+        }
+        
+        .image-info {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e2e8f0;
+            color: #718096;
+            font-size: 0.9rem;
+        }
+        
+        .form-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        h1 {
+            color: #2d3748;
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+        }
+        
+        .success-message {
+            background: #C6F6D5;
+            color: #22543D;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 8px;
+        }
+        
+        input[type="text"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            transition: border-color 0.3s ease;
+        }
+        
+        input[type="text"]:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        select {
+            cursor: pointer;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+        
+        .btn-secondary:hover {
+            background: #cbd5e0;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 6px 15px;
+            border-radius: 15px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        
+        .status-badge.done {
+            background: #C6F6D5;
+            color: #22543D;
+        }
+        
+        .status-badge.new {
+            background: #BEE3F8;
+            color: #2C5282;
+        }
+        
+        .status-badge.error {
+            background: #FED7D7;
+            color: #742A2A;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-button">← Back to Collection</a>
+        
+        <div class="content-wrapper">
+            <div class="image-section">
+                <img src="{{ meme.image_url }}" alt="{{ meme.file_name }}" class="meme-image">
+                <div class="image-info">
+                    <strong>Filename:</strong> {{ meme.file_name }}<br>
+                    <strong>Added:</strong> {{ meme.created_at }}<br>
+                    {% if meme.updated_at %}
+                    <strong>Updated:</strong> {{ meme.updated_at }}
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <h1>Meme Details</h1>
+                
+                {% if saved %}
+                <div class="success-message">
+                    ✓ Changes saved successfully!
+                </div>
+                {% endif %}
+                
+                <form method="POST">
+                    <div class="form-group">
+                        <label for="status">Status</label>
+                        <select name="status" id="status">
+                            <option value="new" {% if meme.status == 'new' %}selected{% endif %}>New</option>
+                            <option value="done" {% if meme.status == 'done' %}selected{% endif %}>Done</option>
+                            <option value="error" {% if meme.status == 'error' %}selected{% endif %}>Error</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="caption">Caption</label>
+                        <textarea name="caption" id="caption" placeholder="Meme caption text">{{ meme.caption }}</textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <textarea name="description" id="description" placeholder="What's happening in this meme?">{{ meme.description }}</textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="meaning">Meaning</label>
+                        <textarea name="meaning" id="meaning" placeholder="What does this meme mean?">{{ meme.meaning }}</textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="template">Template</label>
+                        <textarea name="template" id="template" placeholder="e.g., Drake, Distracted Boyfriend">{{ meme.template }}</textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="ref_content">References</label>
+                        <textarea name="ref_content" id="ref_content" placeholder="Characters, shows, movies, or famous people">{{ meme.ref_content }}</textarea>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                        <a href="/" class="btn btn-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
