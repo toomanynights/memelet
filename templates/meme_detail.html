@@ -196,6 +196,11 @@
             background: #FED7D7;
             color: #742A2A;
         }
+        
+        .status-badge.reviewed {
+            background: #D6BCFA;
+            color: #44337A;
+        }
     </style>
 </head>
 <body>
@@ -230,6 +235,7 @@
                             <option value="new" {% if meme.status == 'new' %}selected{% endif %}>New</option>
                             <option value="done" {% if meme.status == 'done' %}selected{% endif %}>Done</option>
                             <option value="error" {% if meme.status == 'error' %}selected{% endif %}>Error</option>
+                            <option value="reviewed" {% if meme.status == 'reviewed' %}selected{% endif %}>Reviewed</option>
                         </select>
                     </div>
                     

@@ -83,6 +83,16 @@
             flex-wrap: wrap;
         }
         
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn:disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
         .btn {
             padding: 15px 30px;
             border: none;
@@ -172,16 +182,16 @@
                 Trigger manual scans and processing. The automated scan runs every hour.
             </p>
             
-            <form method="POST" style="display: inline;">
+            <form method="POST" style="display: inline;" onsubmit="disableButtons()">
                 <input type="hidden" name="action" value="scan">
-                <button type="submit" class="btn btn-primary">
+                <button type="submit" class="btn btn-primary" id="scan-btn">
                     🔍 Scan & Process New Memes
                 </button>
             </form>
             
-            <form method="POST" style="display: inline;">
+            <form method="POST" style="display: inline;" onsubmit="disableButtons()">
                 <input type="hidden" name="action" value="retry_errors">
-                <button type="submit" class="btn btn-warning">
+                <button type="submit" class="btn btn-warning" id="retry-btn">
                     🔄 Reprocess Errors
                 </button>
             </form>
@@ -197,19 +207,66 @@
     </div>
     
     <script>
-        // Auto-refresh log every 10 seconds
-        setInterval(function() {
+        let isProcessing = false;
+        let logCheckInterval;
+        
+        function disableButtons() {
+            isProcessing = true;
+            document.getElementById('scan-btn').disabled = true;
+            document.getElementById('retry-btn').disabled = true;
+            document.getElementById('scan-btn').textContent = '⏳ Processing...';
+            
+            // Start checking log for completion
+            logCheckInterval = setInterval(checkIfProcessingComplete, 2000);
+        }
+        
+        function enableButtons() {
+            isProcessing = false;
+            document.getElementById('scan-btn').disabled = false;
+            document.getElementById('retry-btn').disabled = false;
+            document.getElementById('scan-btn').textContent = '🔍 Scan & Process New Memes';
+            
+            if (logCheckInterval) {
+                clearInterval(logCheckInterval);
+            }
+        }
+        
+        let lastLogContent = '';
+        
+        function checkIfProcessingComplete() {
             fetch('/settings')
                 .then(response => response.text())
                 .then(html => {
-                    // Parse the HTML to extract just the log content
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(html, 'text/html');
                     const newLogContent = doc.getElementById('log-content').textContent;
+                    
+                    // Check if log content changed and contains completion message
+                    if (newLogContent !== lastLogContent && 
+                        newLogContent.includes('completed')) {
+                        enableButtons();
+                    }
+                    
+                    lastLogContent = newLogContent;
                     document.getElementById('log-content').textContent = newLogContent;
                 })
-                .catch(error => console.error('Error refreshing log:', error));
-        }, 10000);
+                .catch(error => console.error('Error checking log:', error));
+        }
+        
+        // Auto-refresh log every 5 seconds (more frequent than before)
+        setInterval(function() {
+            if (!isProcessing) {
+                fetch('/settings')
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const newLogContent = doc.getElementById('log-content').textContent;
+                        document.getElementById('log-content').textContent = newLogContent;
+                    })
+                    .catch(error => console.error('Error refreshing log:', error));
+            }
+        }, 5000);
     </script>
 </body>
 </html>

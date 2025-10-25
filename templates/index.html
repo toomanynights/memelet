@@ -162,6 +162,14 @@
             background: rgba(245, 101, 101, 1);
         }
         
+        .stat-badge.reviewed {
+            background: rgba(183, 148, 244, 0.8);
+        }
+        
+        .stat-badge.reviewed.active {
+            background: rgba(183, 148, 244, 1);
+        }
+        
         .results-info {
             text-align: center;
             color: white;
@@ -245,6 +253,11 @@
         .status-badge.error {
             background: #FED7D7;
             color: #742A2A;
+        }
+        
+        .status-badge.reviewed {
+            background: #D6BCFA;
+            color: #44337A;
         }
         
         .meme-description {
@@ -334,6 +347,12 @@
                 <a href="?status=error{% if search_query %}&search={{ search_query }}{% endif %}" 
                    class="stat-badge error {% if status_filter == 'error' %}active{% endif %}">
                     Errors: {{ stats.get('error') }}
+                </a>
+                {% endif %}
+                {% if stats.get('reviewed') %}
+                <a href="?status=reviewed{% if search_query %}&search={{ search_query }}{% endif %}" 
+                   class="stat-badge reviewed {% if status_filter == 'reviewed' %}active{% endif %}">
+                    Reviewed: {{ stats.get('reviewed') }}
                 </a>
                 {% endif %}
             </div>

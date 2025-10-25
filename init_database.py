@@ -18,7 +18,7 @@ def init_database():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             file_path TEXT UNIQUE NOT NULL,
             status TEXT NOT NULL DEFAULT 'new',
-            ref_content TEXT,
+            references TEXT,
             template TEXT,
             caption TEXT,
             description TEXT,
@@ -37,10 +37,10 @@ def init_database():
     conn.commit()
     conn.close()
     
-    print(f"Database initialized at: {Path(DB_PATH).resolve()}")
-    print(f"Table 'memes' created with fields:")
+    print(f"✅ Database initialized at: {Path(DB_PATH).resolve()}")
+    print(f"📊 Table 'memes' created with fields:")
     print("   - id, file_path, status")
-    print("   - ref_content, template, caption, description, meaning")
+    print("   - references, template, caption, description, meaning")
     print("   - error_message, created_at, updated_at")
 
 if __name__ == "__main__":

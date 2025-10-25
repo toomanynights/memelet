@@ -169,24 +169,26 @@ def settings():
         action = request.form.get('action')
         
         if action == 'scan':
-            # Run scan and process
-            result = subprocess.run(
+            # Run scan and process in background
+            subprocess.Popen(
                 ['/home/basil/memes/run_scan.sh'],
-                capture_output=True,
-                text=True
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
             )
-            message = "Scan started successfully!" if result.returncode == 0 else f"Error: {result.stderr}"
-            message_type = "success" if result.returncode == 0 else "error"
+            message = "Scan started in background! Check the log below for progress."
+            message_type = "success"
         
         elif action == 'retry_errors':
-            # Run retry errors
-            result = subprocess.run(
+            # Run retry errors in background
+            subprocess.Popen(
                 ['bash', '-c', 'cd /home/basil/memes && source venv/bin/activate && source .env && python3 process_memes.py --retry-errors'],
-                capture_output=True,
-                text=True
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
             )
-            message = "Error reprocessing started!" if result.returncode == 0 else f"Error: {result.stderr}"
-            message_type = "success" if result.returncode == 0 else "error"
+            message = "Error reprocessing started in background! Check the log below for progress."
+            message_type = "success"
     
     # Read log file - get last complete entry
     log_path = "/home/basil/memes/logs/scan.log"
@@ -219,4 +221,3 @@ def settings():
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=False)
-    
