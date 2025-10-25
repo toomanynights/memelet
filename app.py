@@ -182,6 +182,7 @@ def meme_detail(meme_id):
         'id': row['id'],
         'image_url': MEMES_URL_BASE + file_name,
         'file_name': file_name,
+        'file_path': row['file_path'],
         'status': row['status'],
         'ref_content': row['ref_content'] or '',
         'template': row['template'] or '',
@@ -210,6 +211,39 @@ def meme_detail(meme_id):
     saved = request.method == 'POST'
     
     return render_template('meme_detail.html', meme=meme, saved=saved, all_tags=all_tags, current_tags=current_tags)
+
+@app.route('/api/memes/<int:meme_id>', methods=['DELETE'])
+def delete_meme(meme_id):
+    """Delete a meme from database and filesystem"""
+    import os
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Get file path before deleting
+    cursor.execute("SELECT file_path FROM memes WHERE id = ?", (meme_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        return {'success': False, 'error': 'Meme not found'}, 404
+    
+    file_path = row['file_path']
+    
+    # Delete from database (CASCADE will handle meme_tags)
+    cursor.execute("DELETE FROM memes WHERE id = ?", (meme_id,))
+    conn.commit()
+    conn.close()
+    
+    # Delete file from filesystem
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception as e:
+        # File deleted from DB but not filesystem - log but don't fail
+        print(f"Warning: Could not delete file {file_path}: {e}")
+    
+    return {'success': True}
 
 @app.route('/settings')
 def settings():

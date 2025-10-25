@@ -210,6 +210,41 @@
             background: #cbd5e0;
         }
         
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #b91c1c;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+        }
+        
+        .delete-section {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 2px solid #e2e8f0;
+        }
+        
+        .danger-zone {
+            background: #fef2f2;
+            border: 2px solid #fecaca;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        
+        .danger-zone h3 {
+            color: #991b1b;
+            margin-bottom: 10px;
+        }
+        
+        .danger-zone p {
+            color: #7f1d1d;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+        
         .status-badge {
             display: inline-block;
             padding: 6px 15px;
@@ -327,8 +362,39 @@
                         <a href="/" class="btn btn-secondary">Cancel</a>
                     </div>
                 </form>
+                
+                <div class="delete-section">
+                    <div class="danger-zone">
+                        <h3>⚠️ Danger Zone</h3>
+                        <p>This will permanently delete the meme from both the database and filesystem. This action cannot be undone.</p>
+                        <button onclick="deleteMeme()" class="btn btn-danger">Delete Meme</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
+    
+    <script>
+        function deleteMeme() {
+            if (!confirm('Are you sure you want to permanently delete this meme?\n\nThis will delete:\n- The database entry\n- All tags\n- The image file\n\nThis action cannot be undone!')) {
+                return;
+            }
+            
+            fetch('/api/memes/{{ meme.id }}', {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.href = '/';
+                } else {
+                    alert('Error deleting meme: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                alert('Error deleting meme: ' + error);
+            });
+        }
+    </script>
 </body>
 </html>
