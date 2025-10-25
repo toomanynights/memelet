@@ -156,39 +156,10 @@ def meme_detail(meme_id):
     
     return render_template('meme_detail.html', meme=meme, saved=saved)
 
-@app.route('/settings', methods=['GET', 'POST'])
+@app.route('/settings')
 def settings():
-    """Settings page with logs and manual actions"""
-    import subprocess
+    """Settings page with logs"""
     import os
-    
-    message = None
-    message_type = None
-    
-    if request.method == 'POST':
-        action = request.form.get('action')
-        
-        if action == 'scan':
-            # Run scan and process in background
-            subprocess.Popen(
-                ['/home/basil/memes/run_scan.sh'],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True
-            )
-            message = "Scan started in background! Check the log below for progress."
-            message_type = "success"
-        
-        elif action == 'retry_errors':
-            # Run retry errors in background
-            subprocess.Popen(
-                ['bash', '-c', 'cd /home/basil/memes && source venv/bin/activate && source .env && python3 process_memes.py --retry-errors'],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True
-            )
-            message = "Error reprocessing started in background! Check the log below for progress."
-            message_type = "success"
     
     # Read log file - get last complete entry
     log_path = "/home/basil/memes/logs/scan.log"
@@ -217,7 +188,37 @@ def settings():
     else:
         log_content = "No log file found"
     
-    return render_template('settings.html', log_content=log_content, message=message, message_type=message_type)
+    return render_template('settings.html', log_content=log_content)
+
+@app.route('/api/trigger-action', methods=['POST'])
+def trigger_action():
+    """API endpoint to trigger background actions"""
+    import subprocess
+    
+    data = request.get_json()
+    action = data.get('action')
+    
+    if action == 'scan':
+        # Run scan and process in background
+        subprocess.Popen(
+            ['/home/basil/memes/run_scan.sh'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True
+        )
+        return {'success': True, 'message': 'Scan started in background!'}
+    
+    elif action == 'retry_errors':
+        # Run retry errors in background
+        subprocess.Popen(
+            ['bash', '-c', 'cd /home/basil/memes && source venv/bin/activate && source .env && python3 process_memes.py --retry-errors'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True
+        )
+        return {'success': True, 'message': 'Error reprocessing started in background!'}
+    
+    return {'success': False, 'message': 'Invalid action'}
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=False)

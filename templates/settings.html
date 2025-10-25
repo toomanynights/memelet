@@ -172,29 +172,19 @@
         <div class="section">
             <h2>Manual Actions</h2>
             
-            {% if message %}
-            <div class="message {{ message_type }}">
-                {{ message }}
-            </div>
-            {% endif %}
+            <div id="message-container"></div>
             
             <p class="action-description">
                 Trigger manual scans and processing. The automated scan runs every hour.
             </p>
             
-            <form method="POST" style="display: inline;" onsubmit="disableButtons()">
-                <input type="hidden" name="action" value="scan">
-                <button type="submit" class="btn btn-primary" id="scan-btn">
-                    🔍 Scan & Process New Memes
-                </button>
-            </form>
+            <button type="button" class="btn btn-primary" id="scan-btn" onclick="triggerAction('scan')">
+                🔍 Scan & Process New Memes
+            </button>
             
-            <form method="POST" style="display: inline;" onsubmit="disableButtons()">
-                <input type="hidden" name="action" value="retry_errors">
-                <button type="submit" class="btn btn-warning" id="retry-btn">
-                    🔄 Reprocess Errors
-                </button>
-            </form>
+            <button type="button" class="btn btn-warning" id="retry-btn" onclick="triggerAction('retry_errors')">
+                🔄 Reprocess Errors
+            </button>
         </div>
         
         <div class="section">
@@ -210,14 +200,49 @@
         let isProcessing = false;
         let logCheckInterval;
         
-        function disableButtons() {
+        function triggerAction(action) {
+            // Disable buttons
             isProcessing = true;
             document.getElementById('scan-btn').disabled = true;
             document.getElementById('retry-btn').disabled = true;
-            document.getElementById('scan-btn').textContent = '⏳ Processing...';
             
-            // Start checking log for completion
-            logCheckInterval = setInterval(checkIfProcessingComplete, 2000);
+            if (action === 'scan') {
+                document.getElementById('scan-btn').textContent = '⏳ Processing...';
+            } else {
+                document.getElementById('retry-btn').textContent = '⏳ Processing...';
+            }
+            
+            // Show message
+            showMessage('Starting process... Check the log below for progress.', 'success');
+            
+            // Trigger action via AJAX
+            fetch('/api/trigger-action', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ action: action })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage(data.message, 'success');
+                    // Start checking log for completion
+                    logCheckInterval = setInterval(checkIfProcessingComplete, 2000);
+                } else {
+                    showMessage(data.message, 'error');
+                    enableButtons();
+                }
+            })
+            .catch(error => {
+                showMessage('Error triggering action: ' + error, 'error');
+                enableButtons();
+            });
+        }
+        
+        function showMessage(text, type) {
+            const container = document.getElementById('message-container');
+            container.innerHTML = `<div class="message ${type}">${text}</div>`;
         }
         
         function enableButtons() {
@@ -225,6 +250,7 @@
             document.getElementById('scan-btn').disabled = false;
             document.getElementById('retry-btn').disabled = false;
             document.getElementById('scan-btn').textContent = '🔍 Scan & Process New Memes';
+            document.getElementById('retry-btn').textContent = '🔄 Reprocess Errors';
             
             if (logCheckInterval) {
                 clearInterval(logCheckInterval);
@@ -244,6 +270,7 @@
                     // Check if log content changed and contains completion message
                     if (newLogContent !== lastLogContent && 
                         newLogContent.includes('completed')) {
+                        showMessage('✓ Process completed!', 'success');
                         enableButtons();
                     }
                     
@@ -253,7 +280,7 @@
                 .catch(error => console.error('Error checking log:', error));
         }
         
-        // Auto-refresh log every 5 seconds (more frequent than before)
+        // Auto-refresh log every 5 seconds
         setInterval(function() {
             if (!isProcessing) {
                 fetch('/settings')
