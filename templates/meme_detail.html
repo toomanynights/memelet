@@ -81,6 +81,43 @@
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
         }
         
+        .tag-selector {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            min-height: 60px;
+        }
+        
+        .tag-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            color: white;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+        
+        .tag-chip:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .tag-chip input[type="checkbox"] {
+            margin: 0;
+            cursor: pointer;
+        }
+        
+        .tag-chip.selected {
+            box-shadow: 0 0 0 3px rgba(255,255,255,0.5);
+        }
+        
         h1 {
             color: #2d3748;
             margin-bottom: 20px;
@@ -237,6 +274,27 @@
                             <option value="error" {% if meme.status == 'error' %}selected{% endif %}>Error</option>
                             <option value="reviewed" {% if meme.status == 'reviewed' %}selected{% endif %}>Reviewed</option>
                         </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Tags</label>
+                        <div class="tag-selector">
+                            {% if all_tags %}
+                                {% for tag in all_tags %}
+                                <label class="tag-chip {% if tag.id in current_tags %}selected{% endif %}" 
+                                       style="background-color: {{ tag.color }}">
+                                    <input type="checkbox" 
+                                           name="tags" 
+                                           value="{{ tag.id }}" 
+                                           {% if tag.id in current_tags %}checked{% endif %}
+                                           onchange="this.parentElement.classList.toggle('selected', this.checked)">
+                                    {{ tag.name }}
+                                </label>
+                                {% endfor %}
+                            {% else %}
+                                <span style="color: #a0aec0;">No tags created yet. <a href="/tags" style="color: #667eea;">Create tags</a></span>
+                            {% endif %}
+                        </div>
                     </div>
                     
                     <div class="form-group">

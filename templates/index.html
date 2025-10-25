@@ -30,10 +30,22 @@
             position: relative;
         }
         
-        .settings-button {
+        .header-buttons {
             position: absolute;
             top: 0;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .header-buttons.left {
+            left: 0;
+        }
+        
+        .header-buttons.right {
             right: 0;
+        }
+        
+        .header-button {
             background: rgba(255,255,255,0.2);
             color: white;
             width: 50px;
@@ -47,8 +59,16 @@
             transition: all 0.3s ease;
         }
         
-        .settings-button:hover {
+        .header-button:hover {
             background: rgba(255,255,255,0.3);
+            transform: scale(1.1);
+        }
+        
+        .header-button.tags:hover {
+            transform: rotate(-10deg) scale(1.1);
+        }
+        
+        .header-button.settings:hover {
             transform: rotate(90deg);
         }
         
@@ -170,6 +190,36 @@
             background: rgba(183, 148, 244, 1);
         }
         
+        .tags-filter {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .tag-filter-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 0.9rem;
+        }
+        
+        .tag-filter-badge:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        
+        .tag-filter-badge.active {
+            box-shadow: 0 0 0 3px rgba(255,255,255,0.5);
+            transform: translateY(-2px);
+        }
+        
         .results-info {
             text-align: center;
             color: white;
@@ -211,12 +261,39 @@
             cursor: pointer;
             text-decoration: none;
             color: inherit;
-            display: block;
+            display: flex;
+            flex-direction: column;
         }
         
         .meme-card:hover {
             transform: translateY(-5px);
             box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+        
+        .meme-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+        
+        .meme-tag {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .meme-tag.more {
+            background: #cbd5e0;
+            color: #4a5568;
+            cursor: pointer;
+        }
+        
+        .meme-tag.more:hover {
+            background: #a0aec0;
         }
         
         .meme-image {
@@ -304,7 +381,12 @@
 <body>
     <div class="container">
         <header>
-            <a href="/settings" class="settings-button" title="Settings">⚙️</a>
+            <div class="header-buttons left">
+                <a href="/tags" class="header-button tags" title="Manage Tags">🏷️</a>
+            </div>
+            <div class="header-buttons right">
+                <a href="/settings" class="header-button settings" title="Settings">⚙️</a>
+            </div>
             <h1>🎭 Memelet</h1>
             <p>Because memes are happiness</p>
             
@@ -318,10 +400,16 @@
                         value="{{ search_query }}"
                         autofocus
                     >
+                    {% if search_query %}
+                    <input type="hidden" name="search" value="{{ search_query }}">
+                    {% endif %}
                     {% if status_filter %}
                     <input type="hidden" name="status" value="{{ status_filter }}">
                     {% endif %}
-                    {% if search_query or status_filter %}
+                    {% if tag_filter %}
+                    <input type="hidden" name="tag" value="{{ tag_filter }}">
+                    {% endif %}
+                    {% if search_query or status_filter or tag_filter %}
                     <a href="/" class="clear-btn">Clear</a>
                     {% endif %}
                 </form>
@@ -357,11 +445,28 @@
                 {% endif %}
             </div>
             
-            {% if search_query or status_filter %}
+            {% if all_tags %}
+            <div class="tags-filter">
+                {% for tag in all_tags %}
+                <a href="{% if tag_filter == tag.id|string %}/?{% if search_query %}search={{ search_query }}{% endif %}{% if status_filter %}{% if search_query %}&{% endif %}status={{ status_filter }}{% endif %}{% else %}?tag={{ tag.id }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% endif %}" 
+                   class="tag-filter-badge {% if tag_filter == tag.id|string %}active{% endif %}"
+                   style="background-color: {{ tag.color }}">
+                    {{ tag.name }} ({{ tag.count }})
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+            
+            {% if search_query or status_filter or tag_filter %}
             <div class="results-info">
                 Showing {{ memes|length }} result(s)
                 {% if search_query %}for "{{ search_query }}"{% endif %}
                 {% if status_filter %}with status "{{ status_filter }}"{% endif %}
+                {% if tag_filter %}
+                    {% for tag in all_tags %}
+                        {% if tag.id == tag_filter|int %}with tag "{{ tag.name }}"{% endif %}
+                    {% endfor %}
+                {% endif %}
             </div>
             {% endif %}
         </header>
@@ -377,13 +482,26 @@
                     {% if meme.description %}
                     <p class="meme-description">{{ meme.description }}</p>
                     {% endif %}
+                    
+                    {% if meme.tags %}
+                    <div class="meme-tags">
+                        {% for tag in meme.tags[:3] %}
+                        <span class="meme-tag" style="background-color: {{ tag.color }}">{{ tag.name }}</span>
+                        {% endfor %}
+                        {% if meme.tags|length > 3 %}
+                        <span class="meme-tag more" title="{{ meme.tags[3:]|map(attribute='name')|join(', ') }}">
+                            +{{ meme.tags|length - 3 }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                 </div>
             </a>
             {% endfor %}
         </div>
         {% else %}
         <div class="empty-state">
-            {% if search_query or status_filter %}
+            {% if search_query or status_filter or tag_filter %}
             <h2>No memes found</h2>
             <p>Try a different search or filter</p>
             <br>
