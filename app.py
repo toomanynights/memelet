@@ -24,13 +24,14 @@ def index():
     search_query = request.args.get('search', '').strip()
     status_filter = request.args.get('status', '')
     tag_filter = request.args.get('tag', '')
+    media_filter = request.args.get('media', '')
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
     # Build the SQL query based on filters
     sql = """
-        SELECT DISTINCT m.id, m.file_path, m.status, m.ref_content, m.template, 
+        SELECT DISTINCT m.id, m.file_path, m.status, m.media_type, m.ref_content, m.template, 
                m.caption, m.description, m.meaning, m.created_at
         FROM memes m
         WHERE 1=1
@@ -48,6 +49,11 @@ def index():
             SELECT meme_id FROM meme_tags WHERE tag_id = ?
         )"""
         params.append(tag_filter)
+    
+    # Add media type filter
+    if media_filter:
+        sql += " AND m.media_type = ?"
+        params.append(media_filter)
     
     # Add search filter (search in all text fields and file path)
     if search_query:
@@ -86,6 +92,7 @@ def index():
             'id': row['id'],
             'image_url': MEMES_URL_BASE + file_name,
             'status': row['status'],
+            'media_type': row['media_type'],
             'description': row['description'],
             'tags': tags
         })
@@ -95,6 +102,10 @@ def index():
     stats = {row['status']: row['count'] for row in cursor.fetchall()}
     cursor.execute("SELECT COUNT(*) as total FROM memes")
     total = cursor.fetchone()['total']
+    
+    # Get media type stats
+    cursor.execute("SELECT media_type, COUNT(*) as count FROM memes GROUP BY media_type")
+    media_stats = {row['media_type']: row['count'] for row in cursor.fetchall()}
     
     # Get all tags with usage count
     cursor.execute("""
@@ -114,10 +125,12 @@ def index():
         memes=memes, 
         stats=stats, 
         total=total,
+        media_stats=media_stats,
         all_tags=all_tags,
         search_query=search_query,
         status_filter=status_filter,
-        tag_filter=tag_filter
+        tag_filter=tag_filter,
+        media_filter=request.args.get('media', '')
     )
 
 @app.route('/pic/<int:meme_id>', methods=['GET', 'POST'])
@@ -298,9 +311,9 @@ def trigger_action():
         return {'success': True, 'message': 'Scan started in background!'}
     
     elif action == 'retry_errors':
-        # Run retry errors in background
+        # Run retry errors in background using dedicated script
         subprocess.Popen(
-            ['bash', '-c', 'cd /home/basil/memes && source venv/bin/activate && source .env && python3 process_memes.py --retry-errors'],
+            ['/home/basil/memes/retry_errors.sh'],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True

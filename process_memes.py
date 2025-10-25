@@ -19,8 +19,24 @@ SYSTEM_PROMPT = (
     "Use correct meme names (like Pepe, Wojak, etc.) and media references."
 )
 
-USER_PROMPT = (
+SYSTEM_PROMPT_GIF = (
+    "You're a meme expert. You're very smart and see meanings between the lines. "
+    "You know all famous persons and all characters from every show, movie and game. "
+    "Use correct meme names (like Pepe, Wojak, etc.) and media references. "
+    "Do not attempt to extrapolate subsequent gif frames - only describe what is actually there."
+)
+
+USER_PROMPT_IMAGE = (
     'This image is a meme. Analyze it and return json of the following structure: '
+    '{references: "Analyze the image to see if it features any famous persons or characters from movies, shows, cartoons or games. If it does, put that information here. If not, omit", '
+    'template: "If the images features an established meme character or template (such as \'trollface\', \'wojak\', \'Pepe the Frog\', \'Loss\'), name it here, otherwise omit", '
+    'caption: "If the image includes any captions, put them here in the original language, otherwise omit", '
+    'description: "Describe the image with its captions (if any) in mind", '
+    'meaning: "Explain what this meme means, using information you determined earlier"}'
+)
+
+USER_PROMPT_GIF = (
+    'This is the first frame of a meme gif. Analyze it and return json of the following structure: '
     '{references: "Analyze the image to see if it features any famous persons or characters from movies, shows, cartoons or games. If it does, put that information here. If not, omit", '
     'template: "If the images features an established meme character or template (such as \'trollface\', \'wojak\', \'Pepe the Frog\', \'Loss\'), name it here, otherwise omit", '
     'caption: "If the image includes any captions, put them here in the original language, otherwise omit", '
@@ -42,26 +58,40 @@ def scan_and_add_new_files():
         print(f"❌ Error: Memes directory not found: {MEMES_DIR}")
         return 0
     
-    # Get all image files
-    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
-    image_files = [
+    # Get all media files
+    image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
+    gif_extensions = {'.gif'}
+    video_extensions = {'.mp4', '.webm', '.mov', '.avi'}
+    
+    all_extensions = image_extensions | gif_extensions | video_extensions
+    
+    media_files = [
         f for f in memes_path.rglob('*') 
-        if f.is_file() and f.suffix.lower() in image_extensions
+        if f.is_file() and f.suffix.lower() in all_extensions
     ]
     
     new_count = 0
-    for image_file in image_files:
-        file_path = str(image_file.resolve())
+    for media_file in media_files:
+        file_path = str(media_file.resolve())
+        extension = media_file.suffix.lower()
+        
+        # Determine media type
+        if extension in gif_extensions:
+            media_type = 'gif'
+        elif extension in video_extensions:
+            media_type = 'video'
+        else:
+            media_type = 'image'
         
         # Check if file already exists in database
         cursor.execute("SELECT id FROM memes WHERE file_path = ?", (file_path,))
         if cursor.fetchone() is None:
             cursor.execute(
-                "INSERT INTO memes (file_path, status) VALUES (?, 'new')",
-                (file_path,)
+                "INSERT INTO memes (file_path, media_type, status) VALUES (?, ?, 'new')",
+                (file_path, media_type)
             )
             new_count += 1
-            print(f"➕ Added: {image_file.name}")
+            print(f"➕ Added: {media_file.name} ({media_type})")
     
     conn.commit()
     conn.close()
@@ -69,37 +99,51 @@ def scan_and_add_new_files():
     print(f"\n✅ Scan complete. Added {new_count} new file(s)")
     return new_count
 
-def analyze_meme(file_path):
+def analyze_meme(file_path, media_type):
     """Send meme to Replicate for analysis"""
     # Convert local file path to public URL
     file_name = Path(file_path).name
-    image_url = f"https://memes.tmn.name/files/{file_name}"
+    media_url = f"https://memes.tmn.name/files/{file_name}"
     
-    input_data = {
-        "prompt": USER_PROMPT,
-        "image_input": [image_url],
-        "system_prompt": SYSTEM_PROMPT,
-        "temperature": 1,
-        "top_p": 1,
-        "max_completion_tokens": 2048
-    }
-    
-    print(f"  → Sending to Replicate: {image_url}")
-    
-    output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+    if media_type == 'gif':
+        # Use same image model for GIFs (first frame)
+        input_data = {
+            "prompt": USER_PROMPT_GIF,
+            "image_input": [media_url],
+            "system_prompt": SYSTEM_PROMPT_GIF,
+            "temperature": 1,
+            "top_p": 1,
+            "max_completion_tokens": 2048
+        }
+        
+        print(f"  → Sending to Replicate (GIF first frame): {media_url}")
+        output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+    else:
+        # Use image model for static images
+        input_data = {
+            "prompt": USER_PROMPT_IMAGE,
+            "image_input": [media_url],
+            "system_prompt": SYSTEM_PROMPT,
+            "temperature": 1,
+            "top_p": 1,
+            "max_completion_tokens": 2048
+        }
+        
+        print(f"  → Sending to Replicate (Image): {media_url}")
+        output = replicate.run("openai/gpt-4.1-mini", input=input_data)
     
     return output
 
-def process_meme(meme_id, file_path):
+def process_meme(meme_id, file_path, media_type):
     """Process a single meme and update database"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    print(f"\n🔍 Processing: {Path(file_path).name}")
+    print(f"\n🔍 Processing: {Path(file_path).name} ({media_type})")
     
     try:
         # Get analysis from Replicate
-        result = analyze_meme(file_path)
+        result = analyze_meme(file_path, media_type)
         
         # Convert list to string (if needed)
         if isinstance(result, list):
@@ -183,14 +227,14 @@ def process_pending_memes(include_errors=False):
     # Build query based on whether we're including errors
     if include_errors:
         cursor.execute("""
-            SELECT id, file_path FROM memes 
+            SELECT id, file_path, media_type FROM memes 
             WHERE status IN ('new', 'error')
             ORDER BY created_at
         """)
         print("📋 Processing memes with status: 'new' or 'error'\n")
     else:
         cursor.execute("""
-            SELECT id, file_path FROM memes 
+            SELECT id, file_path, media_type FROM memes 
             WHERE status = 'new'
             ORDER BY created_at
         """)
@@ -208,8 +252,8 @@ def process_pending_memes(include_errors=False):
     success_count = 0
     error_count = 0
     
-    for meme_id, file_path in pending_memes:
-        if process_meme(meme_id, file_path):
+    for meme_id, file_path, media_type in pending_memes:
+        if process_meme(meme_id, file_path, media_type):
             success_count += 1
         else:
             error_count += 1

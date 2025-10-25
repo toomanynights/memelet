@@ -190,6 +190,30 @@
             background: rgba(183, 148, 244, 1);
         }
         
+        .stat-badge.media-image {
+            background: rgba(59, 130, 246, 0.8);
+        }
+        
+        .stat-badge.media-image.active {
+            background: rgba(59, 130, 246, 1);
+        }
+        
+        .stat-badge.media-gif {
+            background: rgba(236, 72, 153, 0.8);
+        }
+        
+        .stat-badge.media-gif.active {
+            background: rgba(236, 72, 153, 1);
+        }
+        
+        .stat-badge.media-video {
+            background: rgba(139, 92, 246, 0.8);
+        }
+        
+        .stat-badge.media-video.active {
+            background: rgba(139, 92, 246, 1);
+        }
+        
         .tags-filter {
             display: flex;
             justify-content: center;
@@ -301,6 +325,19 @@
             height: 300px;
             object-fit: cover;
             background: #f0f0f0;
+            position: relative;
+        }
+        
+        .media-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
         }
         
         .meme-content {
@@ -409,7 +446,10 @@
                     {% if tag_filter %}
                     <input type="hidden" name="tag" value="{{ tag_filter }}">
                     {% endif %}
-                    {% if search_query or status_filter or tag_filter %}
+                    {% if media_filter %}
+                    <input type="hidden" name="media" value="{{ media_filter }}">
+                    {% endif %}
+                    {% if search_query or status_filter or tag_filter or media_filter %}
                     <a href="/" class="clear-btn">Clear</a>
                     {% endif %}
                 </form>
@@ -443,6 +483,25 @@
                     Reviewed: {{ stats.get('reviewed') }}
                 </a>
                 {% endif %}
+                
+                {% if media_stats.get('image') %}
+                <a href="?media=image{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}" 
+                   class="stat-badge media-image {% if media_filter == 'image' %}active{% endif %}">
+                    📷 Images: {{ media_stats.get('image') }}
+                </a>
+                {% endif %}
+                {% if media_stats.get('gif') %}
+                <a href="?media=gif{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}" 
+                   class="stat-badge media-gif {% if media_filter == 'gif' %}active{% endif %}">
+                    🎬 GIFs: {{ media_stats.get('gif') }}
+                </a>
+                {% endif %}
+                {% if media_stats.get('video') %}
+                <a href="?media=video{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}" 
+                   class="stat-badge media-video {% if media_filter == 'video' %}active{% endif %}">
+                    🎥 Videos: {{ media_stats.get('video') }}
+                </a>
+                {% endif %}
             </div>
             
             {% if all_tags %}
@@ -457,7 +516,7 @@
             </div>
             {% endif %}
             
-            {% if search_query or status_filter or tag_filter %}
+            {% if search_query or status_filter or tag_filter or media_filter %}
             <div class="results-info">
                 Showing {{ memes|length }} result(s)
                 {% if search_query %}for "{{ search_query }}"{% endif %}
@@ -467,6 +526,7 @@
                         {% if tag.id == tag_filter|int %}with tag "{{ tag.name }}"{% endif %}
                     {% endfor %}
                 {% endif %}
+                {% if media_filter %}of type "{{ media_filter }}"{% endif %}
             </div>
             {% endif %}
         </header>
@@ -475,7 +535,12 @@
         <div class="memes-grid">
             {% for meme in memes %}
             <a href="/pic/{{ meme.id }}" class="meme-card">
-                <img src="{{ meme.image_url }}" alt="Meme" class="meme-image" loading="lazy">
+                <div style="position: relative;">
+                    <img src="{{ meme.image_url }}" alt="Meme" class="meme-image" loading="lazy">
+                    {% if meme.media_type == 'gif' %}
+                    <span class="media-indicator">GIF</span>
+                    {% endif %}
+                </div>
                 <div class="meme-content">
                     <span class="status-badge {{ meme.status }}">{{ meme.status }}</span>
                     
@@ -501,7 +566,7 @@
         </div>
         {% else %}
         <div class="empty-state">
-            {% if search_query or status_filter or tag_filter %}
+            {% if search_query or status_filter or tag_filter or media_filter %}
             <h2>No memes found</h2>
             <p>Try a different search or filter</p>
             <br>
