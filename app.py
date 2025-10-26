@@ -169,10 +169,7 @@ def index():
             'id': row['id'],
             'image_url': image_url,
             'video_url': video_url,
-            'image_url': image_url,
-            'video_url': video_url,
             'status': row['status'],
-            'media_type': media_type,
             'media_type': media_type,
             'description': row['description'],
             'tags': tags
@@ -219,18 +216,6 @@ def index():
 @app.route('/pic/<int:meme_id>', methods=['GET', 'POST'])
 def meme_detail(meme_id):
     """Individual meme page with editing capability"""
-    # Get filter parameters for navigation (from GET or POST)
-    if request.method == 'POST':
-        search_query = request.form.get('search', '')
-        status_filter = request.form.get('status_filter', '')
-        tag_filter = request.form.get('tag_filter', '')
-        media_filter = request.form.get('media_filter', '')
-    else:
-        search_query = request.args.get('search', '')
-        status_filter = request.args.get('status', '')
-        tag_filter = request.args.get('tag', '')
-        media_filter = request.args.get('media', '')
-    
     # Get filter parameters for navigation (from GET or POST)
     if request.method == 'POST':
         search_query = request.form.get('search', '')
@@ -298,16 +283,6 @@ def meme_detail(meme_id):
         
         redirect_url = "/?" + "&".join(redirect_params) if redirect_params else "/"
         return redirect(redirect_url)
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-        conn.close()
-        
-        # Redirect back to index with filters preserved
-        from flask import redirect, url_for
-        redirect_params = []
-        if search_query:
-            redirect_params.append(f"search={search_query}")
         if status_filter:
             redirect_params.append(f"status={status_filter}")
         if tag_filter:
@@ -323,7 +298,6 @@ def meme_detail(meme_id):
     
     # Get meme details
     cursor.execute("""
-        SELECT id, file_path, media_type, status, ref_content, template, 
         SELECT id, file_path, media_type, status, ref_content, template, 
                caption, description, meaning, created_at, updated_at
         FROM memes
