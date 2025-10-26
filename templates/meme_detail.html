@@ -329,7 +329,14 @@
         
         <div class="content-wrapper">
             <div class="image-section">
+                {% if meme.video_url %}
+                <video controls class="meme-video">
+                    <source src="{{ meme.video_url }}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                {% else %}
                 <img src="{{ meme.image_url }}" alt="{{ meme.file_name }}" class="meme-image">
+                {% endif %}
                 <div class="image-info">
                     <strong>Filename:</strong> {{ meme.file_name }}<br>
                     <strong>Added:</strong> {{ meme.created_at }}<br>

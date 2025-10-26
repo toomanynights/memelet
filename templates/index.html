@@ -325,7 +325,6 @@
             height: 300px;
             object-fit: cover;
             background: #f0f0f0;
-            position: relative;
         }
         
         .media-indicator {
@@ -539,6 +538,8 @@
                     <img src="{{ meme.image_url }}" alt="Meme" class="meme-image" loading="lazy">
                     {% if meme.media_type == 'gif' %}
                     <span class="media-indicator">GIF</span>
+                    {% elif meme.media_type == 'video' %}
+                    <span class="media-indicator">VIDEO</span>
                     {% endif %}
                 </div>
                 <div class="meme-content">

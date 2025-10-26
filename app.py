@@ -76,6 +76,29 @@ def index():
     for row in cursor.fetchall():
         file_name = Path(row['file_path']).name
         meme_id = row['id']
+        media_type = row['media_type']
+        file_path_obj = Path(row['file_path'])
+        memes_dir = "/home/basil/memes/files"
+        
+        # Calculate relative path for proper URLs
+        try:
+            relative_path = file_path_obj.relative_to(Path(memes_dir))
+            relative_path_str = relative_path.as_posix()
+        except ValueError:
+            relative_path_str = file_name
+        
+        # For videos, use preview GIF
+        if media_type == 'video':
+            video_stem = Path(file_name).stem
+            image_url = MEMES_URL_BASE + f"{video_stem}_preview.gif"
+            video_url = MEMES_URL_BASE + relative_path_str
+        elif media_type == 'gif':
+            # Use the actual GIF (it will animate)
+            image_url = MEMES_URL_BASE + relative_path_str
+            video_url = MEMES_URL_BASE + relative_path_str
+        else:
+            image_url = MEMES_URL_BASE + relative_path_str
+            video_url = None
         
         # Get tags for this meme
         cursor.execute("""
@@ -90,9 +113,10 @@ def index():
         
         memes.append({
             'id': row['id'],
-            'image_url': MEMES_URL_BASE + file_name,
+            'image_url': image_url,
+            'video_url': video_url,
             'status': row['status'],
-            'media_type': row['media_type'],
+            'media_type': media_type,
             'description': row['description'],
             'tags': tags
         })
@@ -204,9 +228,12 @@ def meme_detail(meme_id):
         redirect_url = "/?" + "&".join(redirect_params) if redirect_params else "/"
         return redirect(redirect_url)
     
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
     # Get meme details
     cursor.execute("""
-        SELECT id, file_path, status, ref_content, template, 
+        SELECT id, file_path, media_type, status, ref_content, template, 
                caption, description, meaning, created_at, updated_at
         FROM memes
         WHERE id = ?
@@ -219,12 +246,37 @@ def meme_detail(meme_id):
         return "Meme not found", 404
     
     file_name = Path(row['file_path']).name
+    file_path_obj = Path(row['file_path'])
+    media_type = row['media_type']
+    memes_dir = "/home/basil/memes/files"
+    
+    # Build proper URLs based on media type
+    if media_type == 'video':
+        # Use thumbnail for preview, original file for video player
+        video_stem = file_path_obj.stem
+        try:
+            relative_path = file_path_obj.relative_to(Path(memes_dir))
+            video_url = MEMES_URL_BASE + relative_path.as_posix()
+        except ValueError:
+            video_url = MEMES_URL_BASE + file_name
+        image_url = MEMES_URL_BASE + f"{video_stem}_thumb.jpg"
+    else:
+        # For images/gifs, calculate relative path for URL
+        try:
+            relative_path = file_path_obj.relative_to(Path(memes_dir))
+            image_url = MEMES_URL_BASE + relative_path.as_posix()
+        except ValueError:
+            image_url = MEMES_URL_BASE + file_name
+        video_url = None
+    
     meme = {
         'id': row['id'],
-        'image_url': MEMES_URL_BASE + file_name,
+        'image_url': image_url,
+        'video_url': video_url,
         'file_name': file_name,
         'file_path': row['file_path'],
         'status': row['status'],
+        'media_type': media_type,
         'ref_content': row['ref_content'] or '',
         'template': row['template'] or '',
         'caption': row['caption'] or '',

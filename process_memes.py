@@ -12,11 +12,12 @@ from datetime import datetime
 from PIL import Image
 import os
 import shutil
+import cv2
 
 DB_PATH = "memelet.db"
 MEMES_DIR = "/home/basil/memes/files"
-TEMP_FRAMES_DIR = "/home/basil/memes/files/temp/gif_frames"
-TEMP_FRAMES_URL = "https://memes.tmn.name/files/temp/gif_frames"
+TEMP_FRAMES_DIR = "/home/basil/memes/files/temp/video_frames"
+TEMP_FRAMES_URL = "https://memes.tmn.name/files/temp/video_frames"
 
 SYSTEM_PROMPT = (
     "You're a meme expert. You're very smart and see meanings between the lines. "
@@ -105,6 +106,13 @@ def extract_gif_frames(gif_path, max_frames=10):
         # Get total frames
         frame_count = getattr(img, 'n_frames', 1)
         
+        # Save first frame as static thumbnail in main files directory
+        gif_name = Path(gif_path).stem
+        thumbnail_path = Path(gif_path).parent / f"{gif_name}_thumb.jpg"
+        img.seek(0)
+        img.convert('RGB').save(thumbnail_path, 'JPEG', quality=85)
+        print(f"  ✓ Saved GIF thumbnail: {thumbnail_path.name}")
+        
         # Calculate which frames to extract (evenly distributed)
         if frame_count <= max_frames:
             frame_indices = range(frame_count)
@@ -113,7 +121,6 @@ def extract_gif_frames(gif_path, max_frames=10):
             frame_indices = [int(i * step) for i in range(max_frames)]
         
         # Create temp directory for this GIF
-        gif_name = Path(gif_path).stem
         temp_dir = Path(TEMP_FRAMES_DIR) / gif_name
         temp_dir.mkdir(parents=True, exist_ok=True)
         
@@ -127,18 +134,124 @@ def extract_gif_frames(gif_path, max_frames=10):
             frame_url = f"{TEMP_FRAMES_URL}/{gif_name}/frame_{idx:03d}.jpg"
             extracted_frames.append(frame_url)
         
-        print(f"  ✓ Extracted {len(extracted_frames)} frames")
+        print(f"  ✓ Extracted {len(extracted_frames)} frames from GIF")
         return extracted_frames, temp_dir
         
     except Exception as e:
-        print(f"  ✗ Frame extraction failed: {e}")
+        print(f"  ✗ GIF frame extraction failed: {e}")
+        return [], None
+
+def extract_video_frames(video_path, fps=2, max_frames=20):
+    """Extract frames from video at specified FPS, up to max_frames. Also create preview GIF."""
+    try:
+        cap = cv2.VideoCapture(video_path)
+        
+        if not cap.isOpened():
+            raise Exception("Could not open video file")
+        
+        # Get video properties
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        if video_fps == 0:
+            raise Exception("Could not determine video FPS")
+        
+        # Calculate frame interval
+        frame_interval = int(video_fps / fps)
+        
+        # Limit total frames
+        frames_to_extract = min(max_frames, total_frames // frame_interval)
+        
+        # Create temp directory for this video
+        video_name = Path(video_path).stem
+        temp_dir = Path(TEMP_FRAMES_DIR) / video_name
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Also save thumbnail and preview GIF in main files directory
+        thumbnail_path = Path(video_path).parent / f"{video_name}_thumb.jpg"
+        preview_gif_path = Path(video_path).parent / f"{video_name}_preview.gif"
+        
+        extracted_frames = []
+        preview_frames = []
+        frame_count = 0
+        saved_count = 0
+        
+        # For preview GIF: 5 seconds at 10 FPS = 50 frames max
+        preview_fps = 10
+        preview_duration = 5
+        preview_max_frames = preview_fps * preview_duration
+        preview_interval = int(video_fps / preview_fps)
+        
+        while cap.isOpened() and saved_count < frames_to_extract:
+            ret, frame = cap.read()
+            
+            if not ret:
+                break
+            
+            # Save frame at specified interval for AI analysis
+            if frame_count % frame_interval == 0:
+                frame_path = temp_dir / f"frame_{saved_count:03d}.jpg"
+                cv2.imwrite(str(frame_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                
+                # Save first frame as thumbnail
+                if saved_count == 0:
+                    cv2.imwrite(str(thumbnail_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    print(f"  ✓ Saved thumbnail: {thumbnail_path.name}")
+                
+                # Build web-accessible URL
+                frame_url = f"{TEMP_FRAMES_URL}/{video_name}/frame_{saved_count:03d}.jpg"
+                extracted_frames.append(frame_url)
+                saved_count += 1
+            
+            # Collect frames for preview GIF
+            if frame_count % preview_interval == 0 and len(preview_frames) < preview_max_frames:
+                # Resize frame for smaller GIF (max width 400px)
+                height, width = frame.shape[:2]
+                if width > 400:
+                    new_width = 400
+                    new_height = int(height * (400 / width))
+                    frame = cv2.resize(frame, (new_width, new_height))
+                
+                # Convert BGR to RGB for PIL
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                preview_frames.append(Image.fromarray(frame_rgb))
+            
+            frame_count += 1
+        
+        cap.release()
+        
+        # Create preview GIF from collected frames
+        if preview_frames:
+            preview_frames[0].save(
+                preview_gif_path,
+                save_all=True,
+                append_images=preview_frames[1:],
+                duration=100,  # 100ms per frame = 10 FPS
+                loop=0,
+                optimize=True
+            )
+            print(f"  ✓ Created preview GIF: {preview_gif_path.name} ({len(preview_frames)} frames)")
+        
+        print(f"  ✓ Extracted {len(extracted_frames)} frames from video ({fps} FPS)")
+        return extracted_frames, temp_dir
+        
+    except Exception as e:
+        print(f"  ✗ Video frame extraction failed: {e}")
         return [], None
 
 def analyze_meme(file_path, media_type):
     """Send meme to Replicate for analysis"""
-    # Convert local file path to public URL
-    file_name = Path(file_path).name
-    media_url = f"https://memes.tmn.name/files/{file_name}"
+    # Get relative path from MEMES_DIR to build proper URL
+    file_path_obj = Path(file_path)
+    memes_dir_obj = Path(MEMES_DIR)
+    
+    try:
+        relative_path = file_path_obj.relative_to(memes_dir_obj)
+        media_url = f"https://memes.tmn.name/files/{relative_path.as_posix()}"
+    except ValueError:
+        # Fallback if path isn't relative to MEMES_DIR
+        file_name = file_path_obj.name
+        media_url = f"https://memes.tmn.name/files/{file_name}"
     
     temp_dir = None
     
@@ -164,13 +277,27 @@ def analyze_meme(file_path, media_type):
             print(f"  → Sending {len(frame_urls)} frames to Replicate")
             output = replicate.run("openai/gpt-4.1-mini", input=input_data)
             
-            # Consume the iterator (output might be an iterator or list)
-            result_list = []
-            for item in output:
-                result_list.append(item)
-                print(f"  → Received chunk: {repr(item)[:100]}")
+        elif media_type == 'video':
+            # Extract frames from video
+            print(f"  → Extracting frames from video: {media_url}")
+            frame_urls, temp_dir = extract_video_frames(file_path, fps=2, max_frames=20)
             
-            print(f"  → Total chunks: {len(result_list)}")
+            if not frame_urls:
+                raise Exception("Failed to extract frames from video")
+            
+            # Use same prompt as GIF (they're both videos)
+            input_data = {
+                "prompt": USER_PROMPT_GIF,
+                "image_input": frame_urls,
+                "system_prompt": SYSTEM_PROMPT,
+                "temperature": 1,
+                "top_p": 1,
+                "max_completion_tokens": 2048
+            }
+            
+            print(f"  → Sending {len(frame_urls)} frames to Replicate")
+            output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+            
         else:
             # Use image model for static images
             input_data = {
@@ -184,15 +311,8 @@ def analyze_meme(file_path, media_type):
             
             print(f"  → Sending to Replicate (Image): {media_url}")
             output = replicate.run("openai/gpt-4.1-mini", input=input_data)
-            
-            # Consume the iterator (output might be an iterator or list)
-            result_list = []
-            for item in output:
-                result_list.append(item)
-                print(f"  → Received chunk: {repr(item)[:100]}")
         
-        print(f"  → Total chunks: {len(result_list)}")
-        return result_list
+        return output
         
     finally:
         # Cleanup temp frames
@@ -216,16 +336,9 @@ def process_meme(meme_id, file_path, media_type):
         
         # Convert list to string (if needed)
         if isinstance(result, list):
-            print(f"  → Result is list with {len(result)} items: {result}")
-            result = "".join(str(item) for item in result if item).strip()
+            result = "".join(result).strip()
         
-        print(f"📝 Raw response type: {type(result)}")
-        print(f"📝 Raw response length: {len(result) if result else 0}")
-        print(f"📝 Raw response: {result[:500] if result else '[EMPTY]'}...")
-        
-        # Check if result is empty
-        if not result or len(result) == 0:
-            raise Exception("Empty response from Replicate API")
+        print(f"📝 Raw response: {result[:200]}...")
         
         # Parse JSON response (handle markdown code blocks)
         result_clean = result.strip()
@@ -238,10 +351,6 @@ def process_meme(meme_id, file_path, media_type):
         if result_clean.endswith("```"):
             result_clean = result_clean[:-3]
         result_clean = result_clean.strip()
-        
-        # Check again after cleaning
-        if not result_clean:
-            raise Exception("Empty response after cleaning")
         
         data = json.loads(result_clean)
         
