@@ -112,10 +112,182 @@
             font-weight: 600;
             cursor: pointer;
             transition: background 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
         }
         
         .clear-btn:hover {
             background: rgba(255,255,255,0.4);
+        }
+        
+        .bulk-actions {
+            display: none;
+            justify-content: center;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        .bulk-actions.visible {
+            display: flex;
+        }
+        
+        .bulk-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 20px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .bulk-btn-delete {
+            background: #dc2626;
+            color: white;
+        }
+        
+        .bulk-btn-delete:hover {
+            background: #b91c1c;
+            transform: translateY(-2px);
+        }
+        
+        .bulk-btn-tags {
+            background: #8b5cf6;
+            color: white;
+        }
+        
+        .bulk-btn-tags:hover {
+            background: #7c3aed;
+            transform: translateY(-2px);
+        }
+        
+        .bulk-btn-cancel {
+            background: rgba(255,255,255,0.3);
+            color: white;
+        }
+        
+        .bulk-btn-cancel:hover {
+            background: rgba(255,255,255,0.4);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .modal-header {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2d3748;
+        }
+        
+        .tag-selector-modal {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .tag-option {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .tag-option:hover {
+            border-color: #8b5cf6;
+            background: #f5f3ff;
+        }
+        
+        .tag-option.selected {
+            border-color: #8b5cf6;
+            background: #ede9fe;
+        }
+        
+        .tag-option input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #8b5cf6;
+        }
+        
+        .tag-option input[type="checkbox"]:indeterminate {
+            accent-color: #6366f1;
+        }
+        
+        .tag-color-box {
+            width: 30px;
+            height: 30px;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+        
+        .tag-option-info {
+            flex: 1;
+        }
+        
+        .tag-option-name {
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+        
+        .btn-secondary:hover {
+            background: #cbd5e0;
         }
         
         .stats {
@@ -276,6 +448,10 @@
             }
         }
         
+        .meme-card-wrapper {
+            position: relative;
+        }
+        
         .meme-card {
             background: white;
             border-radius: 12px;
@@ -294,30 +470,23 @@
             box-shadow: 0 15px 40px rgba(0,0,0,0.3);
         }
         
-        .meme-tags {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-top: 10px;
+        .meme-card-wrapper:hover .meme-card {
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
         }
         
-        .meme-tag {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 12px;
-            color: white;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-        
-        .meme-tag.more {
-            background: #cbd5e0;
-            color: #4a5568;
+        .meme-checkbox {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            width: 28px;
+            height: 28px;
             cursor: pointer;
-        }
-        
-        .meme-tag.more:hover {
-            background: #a0aec0;
+            z-index: 10;
+            accent-color: #dc2626;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 4px;
+            border: 2px solid white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
         
         .meme-image {
@@ -325,7 +494,6 @@
             height: 300px;
             object-fit: cover;
             background: #f0f0f0;
-            position: relative;
         }
         
         .media-indicator {
@@ -380,21 +548,30 @@
             margin-bottom: 12px;
         }
         
-        .meme-meta {
-            font-size: 0.85rem;
-            color: #718096;
-            margin-top: 8px;
-            padding-top: 12px;
-            border-top: 1px solid #e2e8f0;
+        .meme-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
         }
         
-        .meme-meta-item {
-            margin-bottom: 6px;
-        }
-        
-        .meme-meta-label {
+        .meme-tag {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            color: white;
+            font-size: 0.75rem;
             font-weight: 600;
+        }
+        
+        .meme-tag.more {
+            background: #cbd5e0;
             color: #4a5568;
+            cursor: pointer;
+        }
+        
+        .meme-tag.more:hover {
+            background: #a0aec0;
         }
         
         .empty-state {
@@ -406,6 +583,46 @@
         .empty-state h2 {
             font-size: 2rem;
             margin-bottom: 10px;
+        }
+        
+        .empty-state p {
+            margin-bottom: 10px;
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 40px;
+            flex-wrap: wrap;
+        }
+        
+        .pagination a,
+        .pagination span {
+            padding: 10px 15px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .pagination a:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+        
+        .pagination .current {
+            background: rgba(255,255,255,0.4);
+            cursor: default;
+        }
+        
+        .pagination .disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            pointer-events: none;
         }
         
         @media (max-width: 768px) {
@@ -532,38 +749,68 @@
         </header>
         
         {% if memes %}
+        <div class="bulk-actions" id="bulkActions">
+            <button class="bulk-btn bulk-btn-tags" onclick="openTagModal()">🏷️ Manage Tags</button>
+            <button class="bulk-btn bulk-btn-delete" onclick="bulkDelete()">🗑️ Delete Selected</button>
+            <button class="bulk-btn bulk-btn-cancel" onclick="cancelBulkSelect()">Cancel</button>
+        </div>
+        
         <div class="memes-grid">
             {% for meme in memes %}
-            <a href="/pic/{{ meme.id }}" class="meme-card">
-                <div style="position: relative;">
-                    <img src="{{ meme.image_url }}" alt="Meme" class="meme-image" loading="lazy">
-                    {% if meme.media_type == 'gif' %}
-                    <span class="media-indicator">GIF</span>
-                    {% endif %}
-                </div>
-                <div class="meme-content">
-                    <span class="status-badge {{ meme.status }}">{{ meme.status }}</span>
-                    
-                    {% if meme.description %}
-                    <p class="meme-description">{{ meme.description }}</p>
-                    {% endif %}
-                    
-                    {% if meme.tags %}
-                    <div class="meme-tags">
-                        {% for tag in meme.tags[:3] %}
-                        <span class="meme-tag" style="background-color: {{ tag.color }}">{{ tag.name }}</span>
-                        {% endfor %}
-                        {% if meme.tags|length > 3 %}
-                        <span class="meme-tag more" title="{{ meme.tags[3:]|map(attribute='name')|join(', ') }}">
-                            +{{ meme.tags|length - 3 }}
-                        </span>
+            <div class="meme-card-wrapper">
+                <input type="checkbox" class="meme-checkbox" data-id="{{ meme.id }}" onclick="toggleBulkActions(event)">
+                <a href="/pic/{{ meme.id }}?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if tag_filter %}tag={{ tag_filter }}&{% endif %}{% if media_filter %}media={{ media_filter }}{% endif %}" class="meme-card">
+                    <div style="position: relative;">
+                        <img src="{{ meme.image_url }}" alt="Meme" class="meme-image" loading="lazy">
+                        {% if meme.media_type == 'gif' %}
+                        <span class="media-indicator">GIF</span>
+                        {% elif meme.media_type == 'video' %}
+                        <span class="media-indicator">VIDEO</span>
                         {% endif %}
                     </div>
-                    {% endif %}
-                </div>
-            </a>
+                    <div class="meme-content">
+                        <span class="status-badge {{ meme.status }}">{{ meme.status }}</span>
+                        
+                        {% if meme.description %}
+                        <p class="meme-description">{{ meme.description }}</p>
+                        {% endif %}
+                        
+                        {% if meme.tags %}
+                        <div class="meme-tags">
+                            {% for tag in meme.tags[:3] %}
+                            <span class="meme-tag" style="background-color: {{ tag.color }}">{{ tag.name }}</span>
+                            {% endfor %}
+                            {% if meme.tags|length > 3 %}
+                            <span class="meme-tag more" title="{{ meme.tags[3:]|map(attribute='name')|join(', ') }}">
+                                +{{ meme.tags|length - 3 }}
+                            </span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </a>
+            </div>
             {% endfor %}
         </div>
+        
+        {% if show_pagination %}
+        <div class="pagination" id="pagination">
+            {% if page > 1 %}
+            <a href="?page={{ page - 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if tag_filter %}&tag={{ tag_filter }}{% endif %}{% if media_filter %}&media={{ media_filter }}{% endif %}" onclick="scrollToTop()">← Previous</a>
+            {% else %}
+            <span class="disabled">← Previous</span>
+            {% endif %}
+            
+            <span class="current">Page {{ page }} of {{ total_pages }}</span>
+            
+            {% if page < total_pages %}
+            <a href="?page={{ page + 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if tag_filter %}&tag={{ tag_filter }}{% endif %}{% if media_filter %}&media={{ media_filter }}{% endif %}" onclick="scrollToTop()">Next →</a>
+            {% else %}
+            <span class="disabled">Next →</span>
+            {% endif %}
+        </div>
+        {% endif %}
+        
         {% else %}
         <div class="empty-state">
             {% if search_query or status_filter or tag_filter or media_filter %}
@@ -578,5 +825,255 @@
         </div>
         {% endif %}
     </div>
+    
+    <!-- Tag Management Modal -->
+    <div id="tagModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Manage Tags for Selected Memes</div>
+            <p style="color: #718096; margin-bottom: 20px; font-size: 0.9rem;">
+                ☑️ = on all memes | — = on some memes | ☐ = on no memes. Changed tags are highlighted.
+            </p>
+            <div class="tag-selector-modal" id="tagSelector">
+                {% for tag in all_tags %}
+                <div class="tag-option" onclick="toggleTag(this)">
+                    <input type="checkbox" name="tags" value="{{ tag.id }}" onclick="event.stopPropagation()" onchange="handleTagChange(this)">
+                    <div class="tag-color-box" style="background-color: {{ tag.color }}"></div>
+                    <div class="tag-option-info">
+                        <div class="tag-option-name">{{ tag.name }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="closeTagModal()" style="flex: 1;">Cancel</button>
+                <button class="btn btn-primary" onclick="applyTags()" style="flex: 1;">Apply Tags</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let initialFullTags = [];
+        let initialPartialTags = [];
+        let userChangedTags = new Set();
+        
+        // Clear checkboxes and hide bulk actions on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.meme-checkbox').forEach(cb => cb.checked = false);
+            document.getElementById('bulkActions').classList.remove('visible');
+        });
+        
+        function scrollToTop() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        
+        function toggleBulkActions(event) {
+            event.stopPropagation();
+            const anyChecked = document.querySelectorAll('.meme-checkbox:checked').length > 0;
+            document.getElementById('bulkActions').classList.toggle('visible', anyChecked);
+        }
+        
+        function cancelBulkSelect() {
+            document.querySelectorAll('.meme-checkbox').forEach(cb => cb.checked = false);
+            document.getElementById('bulkActions').classList.remove('visible');
+        }
+        
+        function handleTagChange(checkbox) {
+            const tagId = String(checkbox.value);
+            // Mark as user-changed
+            userChangedTags.add(tagId);
+            updateTagHighlight(checkbox.parentElement);
+        }
+        
+        function toggleTag(element) {
+            const checkbox = element.querySelector('input[type="checkbox"]');
+            const tagId = String(checkbox.value);
+            
+            // If indeterminate, clicking should make it checked (not unchecked)
+            if (checkbox.indeterminate) {
+                checkbox.indeterminate = false;
+                checkbox.checked = true;
+            } else {
+                checkbox.checked = !checkbox.checked;
+            }
+            
+            // Mark as user-changed
+            userChangedTags.add(tagId);
+            updateTagHighlight(element);
+        }
+        
+        function updateTagHighlight(element) {
+            const checkbox = element.querySelector('input[type="checkbox"]');
+            const tagId = String(checkbox.value);
+            const wasInitiallyFull = initialFullTags.includes(tagId);
+            const wasInitiallyPartial = initialPartialTags.includes(tagId);
+            const isNowChecked = checkbox.checked;
+            
+            // Determine initial state
+            let initialState;
+            if (wasInitiallyFull) {
+                initialState = 'checked';
+            } else if (wasInitiallyPartial) {
+                initialState = 'partial';
+            } else {
+                initialState = 'unchecked';
+            }
+            
+            // Determine current state
+            let currentState = isNowChecked ? 'checked' : 'unchecked';
+            
+            // Tag is changed if user explicitly interacted (not in initial partial state)
+            const isChanged = userChangedTags.has(tagId);
+            element.classList.toggle('selected', isChanged);
+        }
+        
+        function updateAllHighlights() {
+            document.querySelectorAll('.tag-option').forEach(opt => {
+                updateTagHighlight(opt);
+            });
+        }
+        
+        function openTagModal() {
+            const selected = Array.from(document.querySelectorAll('.meme-checkbox:checked'))
+                .map(cb => parseInt(cb.dataset.id));
+            
+            if (selected.length === 0) {
+                alert('Please select at least one meme');
+                return;
+            }
+            
+            document.getElementById('tagModal').classList.add('active');
+            
+            // Reset all tag selections
+            document.querySelectorAll('.tag-option').forEach(opt => {
+                opt.classList.remove('selected');
+                opt.querySelector('input[type="checkbox"]').checked = false;
+            });
+            
+            // Fetch current tags for selected memes
+            fetch('/api/bulk-memes-tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ meme_ids: selected })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Store initial states
+                    initialFullTags = data.full_tags.map(id => String(id));
+                    initialPartialTags = data.partial_tags.map(id => String(id));
+                    userChangedTags.clear();
+                    
+                    // Set checkbox states
+                    document.querySelectorAll('#tagModal input[name="tags"]').forEach(cb => {
+                        const tagId = String(cb.value);
+                        if (initialFullTags.includes(tagId)) {
+                            cb.checked = true;
+                            cb.indeterminate = false;
+                        } else if (initialPartialTags.includes(tagId)) {
+                            cb.checked = false;
+                            cb.indeterminate = true;
+                        } else {
+                            cb.checked = false;
+                            cb.indeterminate = false;
+                        }
+                    });
+                    
+                    updateAllHighlights();
+                }
+            })
+            .catch(error => console.error('Error fetching current tags:', error));
+        }
+        
+        function closeTagModal() {
+            document.getElementById('tagModal').classList.remove('active');
+        }
+        
+        function applyTags() {
+            const selected = Array.from(document.querySelectorAll('.meme-checkbox:checked'))
+                .map(cb => parseInt(cb.dataset.id));
+            
+            const allCheckboxes = document.querySelectorAll('#tagModal input[name="tags"]');
+            const tagsToAdd = [];
+            const tagsToRemove = [];
+            
+            allCheckboxes.forEach(cb => {
+                const tagId = String(cb.value);
+                const wasInitiallyFull = initialFullTags.includes(tagId);
+                const wasInitiallyPartial = initialPartialTags.includes(tagId);
+                const wasUserChanged = userChangedTags.has(tagId);
+                const isNowChecked = cb.checked;
+                
+                // Only act on tags that the user changed
+                if (wasUserChanged) {
+                    if (isNowChecked) {
+                        // User checked it = add to all memes
+                        tagsToAdd.push(parseInt(tagId));
+                    } else {
+                        // User unchecked it = remove from all memes
+                        tagsToRemove.push(parseInt(tagId));
+                    }
+                }
+                // If not changed by user:
+                // - initialFull (checked initially): stays on all (already there, no action)
+                // - initialPartial (indeterminate initially): stays as-is per meme (no action)
+                // - initialNone (unchecked initially): stays off all (already off, no action)
+            });
+            
+            if (tagsToAdd.length === 0 && tagsToRemove.length === 0) {
+                alert('Please select or deselect at least one tag');
+                return;
+            }
+            
+            fetch('/api/bulk-tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    meme_ids: selected,
+                    tag_ids: tagsToAdd,
+                    remove_tag_ids: tagsToRemove
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    closeTagModal();
+                    // Clear all meme checkboxes
+                    document.querySelectorAll('.meme-checkbox').forEach(cb => cb.checked = false);
+                    // Hide bulk actions
+                    document.getElementById('bulkActions').classList.remove('visible');
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => alert('Error: ' + error));
+        }
+        
+        function bulkDelete() {
+            const selected = Array.from(document.querySelectorAll('.meme-checkbox:checked'))
+                .map(cb => cb.dataset.id);
+            
+            if (selected.length === 0) return;
+            
+            const message = `Are you sure you want to permanently delete ${selected.length} meme(s)?\n\nThis will delete:\n- The database entries\n- All tags\n- The image files\n\nThis action cannot be undone!`;
+            
+            if (!confirm(message)) return;
+            
+            fetch('/api/bulk-delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => alert('Error: ' + error));
+        }
+    </script>
 </body>
 </html>

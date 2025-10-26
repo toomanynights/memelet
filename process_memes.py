@@ -9,21 +9,20 @@ import argparse
 import replicate
 from pathlib import Path
 from datetime import datetime
+from PIL import Image
+import os
+import shutil
+import cv2
 
 DB_PATH = "memelet.db"
 MEMES_DIR = "/home/basil/memes/files"
+TEMP_FRAMES_DIR = "/home/basil/memes/files/temp/video_frames"
+TEMP_FRAMES_URL = "https://memes.tmn.name/files/temp/video_frames"
 
 SYSTEM_PROMPT = (
     "You're a meme expert. You're very smart and see meanings between the lines. "
     "You know all famous persons and all characters from every show, movie and game. "
     "Use correct meme names (like Pepe, Wojak, etc.) and media references."
-)
-
-SYSTEM_PROMPT_GIF = (
-    "You're a meme expert. You're very smart and see meanings between the lines. "
-    "You know all famous persons and all characters from every show, movie and game. "
-    "Use correct meme names (like Pepe, Wojak, etc.) and media references. "
-    "Do not attempt to extrapolate subsequent gif frames - only describe what is actually there."
 )
 
 USER_PROMPT_IMAGE = (
@@ -36,12 +35,12 @@ USER_PROMPT_IMAGE = (
 )
 
 USER_PROMPT_GIF = (
-    'This is the first frame of a meme gif. Analyze it and return json of the following structure: '
-    '{references: "Analyze the image to see if it features any famous persons or characters from movies, shows, cartoons or games. If it does, put that information here. If not, omit", '
-    'template: "If the images features an established meme character or template (such as \'trollface\', \'wojak\', \'Pepe the Frog\', \'Loss\'), name it here, otherwise omit", '
-    'caption: "If the image includes any captions, put them here in the original language, otherwise omit", '
-    'description: "Describe the image with its captions (if any) in mind", '
-    'meaning: "Explain what this meme means, using information you determined earlier"}'
+    'You are provided with some keyframes of a video. Analyze all that information and return json of the following structure: '
+    '{references: "See if it features any famous persons or characters from movies, shows, cartoons or games. If it does, put that information here. If not, omit", '
+    'template: "If it features an established meme character or template (such as \'trollface\', \'wojak\', \'Pepe the Frog\', \'Loss\'), name it here, otherwise omit", '
+    'caption: "If it includes any captions, put them here in the original language, otherwise omit", '
+    'description: "Describe the video, using the frames provided, with its captions (if any) in mind", '
+    'meaning: "Explain what this video means, using information you determined earlier"}'
 )
 
 def get_db_connection():
@@ -65,9 +64,15 @@ def scan_and_add_new_files():
     
     all_extensions = image_extensions | gif_extensions | video_extensions
     
+    # Exclude thumbnails and temp directories, and any preview/thumbnail files
+    excluded_dirs = {'thumbnails', 'temp'}
+    excluded_suffixes = {'_thumb.jpg', '_preview.gif'}
     media_files = [
         f for f in memes_path.rglob('*') 
-        if f.is_file() and f.suffix.lower() in all_extensions
+        if f.is_file() 
+        and f.suffix.lower() in all_extensions
+        and not any(part in excluded_dirs for part in f.parts)
+        and not any(f.name.endswith(suffix) for suffix in excluded_suffixes)
     ]
     
     new_count = 0
@@ -99,40 +104,231 @@ def scan_and_add_new_files():
     print(f"\n✅ Scan complete. Added {new_count} new file(s)")
     return new_count
 
+def extract_gif_frames(gif_path, max_frames=10):
+    """Extract up to max_frames keyframes from GIF"""
+    try:
+        img = Image.open(gif_path)
+        
+        # Get total frames
+        frame_count = getattr(img, 'n_frames', 1)
+        
+        gif_name = Path(gif_path).stem
+        
+        # Calculate which frames to extract (evenly distributed)
+        if frame_count <= max_frames:
+            frame_indices = range(frame_count)
+        else:
+            step = frame_count / max_frames
+            frame_indices = [int(i * step) for i in range(max_frames)]
+        
+        # Create temp directory for this GIF
+        temp_dir = Path(TEMP_FRAMES_DIR) / gif_name
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        extracted_frames = []
+        for idx, frame_num in enumerate(frame_indices):
+            img.seek(frame_num)
+            frame_path = temp_dir / f"frame_{idx:03d}.jpg"
+            img.convert('RGB').save(frame_path, 'JPEG', quality=85)
+            
+            # Build web-accessible URL
+            frame_url = f"{TEMP_FRAMES_URL}/{gif_name}/frame_{idx:03d}.jpg"
+            extracted_frames.append(frame_url)
+        
+        print(f"  ✓ Extracted {len(extracted_frames)} frames from GIF")
+        return extracted_frames, temp_dir
+        
+    except Exception as e:
+        print(f"  ✗ GIF frame extraction failed: {e}")
+        return [], None
+
+def extract_video_frames(video_path, fps=2, max_frames=20):
+    """Extract frames from video at specified FPS, up to max_frames. Also create preview GIF."""
+    try:
+        cap = cv2.VideoCapture(video_path)
+        
+        if not cap.isOpened():
+            raise Exception("Could not open video file")
+        
+        # Get video properties
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        if video_fps == 0:
+            raise Exception("Could not determine video FPS")
+        
+        # Calculate frame interval
+        frame_interval = int(video_fps / fps)
+        
+        # Limit total frames
+        frames_to_extract = min(max_frames, total_frames // frame_interval)
+        
+        # Create temp directory for this video
+        video_name = Path(video_path).stem
+        temp_dir = Path(TEMP_FRAMES_DIR) / video_name
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create thumbnails directory
+        thumbnails_dir = Path(video_path).parent / 'thumbnails'
+        thumbnails_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save preview GIF in thumbnails directory
+        preview_gif_path = thumbnails_dir / f"{video_name}_preview.gif"
+        
+        # Save thumbnail in thumbnails directory
+        thumbnail_path = thumbnails_dir / f"{video_name}_thumb.jpg"
+        
+        extracted_frames = []
+        preview_frames = []
+        frame_count = 0
+        saved_count = 0
+        
+        # For preview GIF: 5 seconds at 10 FPS = 50 frames max
+        preview_fps = 10
+        preview_duration = 5
+        preview_max_frames = preview_fps * preview_duration
+        preview_interval = int(video_fps / preview_fps)
+        
+        while cap.isOpened() and saved_count < frames_to_extract:
+            ret, frame = cap.read()
+            
+            if not ret:
+                break
+            
+            # Save frame at specified interval for AI analysis
+            if frame_count % frame_interval == 0:
+                frame_path = temp_dir / f"frame_{saved_count:03d}.jpg"
+                cv2.imwrite(str(frame_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                
+                # Save first frame as thumbnail
+                if saved_count == 0:
+                    cv2.imwrite(str(thumbnail_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    print(f"  ✓ Saved thumbnail: {thumbnail_path.name}")
+                
+                # Build web-accessible URL
+                frame_url = f"{TEMP_FRAMES_URL}/{video_name}/frame_{saved_count:03d}.jpg"
+                extracted_frames.append(frame_url)
+                saved_count += 1
+            
+            # Collect frames for preview GIF
+            if frame_count % preview_interval == 0 and len(preview_frames) < preview_max_frames:
+                # Resize frame for smaller GIF (max width 400px)
+                height, width = frame.shape[:2]
+                if width > 400:
+                    new_width = 400
+                    new_height = int(height * (400 / width))
+                    frame = cv2.resize(frame, (new_width, new_height))
+                
+                # Convert BGR to RGB for PIL
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                preview_frames.append(Image.fromarray(frame_rgb))
+            
+            frame_count += 1
+        
+        cap.release()
+        
+        # Create preview GIF from collected frames
+        if preview_frames:
+            preview_frames[0].save(
+                preview_gif_path,
+                save_all=True,
+                append_images=preview_frames[1:],
+                duration=100,  # 100ms per frame = 10 FPS
+                loop=0,
+                optimize=True
+            )
+            print(f"  ✓ Created preview GIF: {preview_gif_path.name} ({len(preview_frames)} frames)")
+        
+        print(f"  ✓ Extracted {len(extracted_frames)} frames from video ({fps} FPS)")
+        return extracted_frames, temp_dir
+        
+    except Exception as e:
+        print(f"  ✗ Video frame extraction failed: {e}")
+        return [], None
+
 def analyze_meme(file_path, media_type):
     """Send meme to Replicate for analysis"""
-    # Convert local file path to public URL
-    file_name = Path(file_path).name
-    media_url = f"https://memes.tmn.name/files/{file_name}"
+    # Get relative path from MEMES_DIR to build proper URL
+    file_path_obj = Path(file_path)
+    memes_dir_obj = Path(MEMES_DIR)
     
-    if media_type == 'gif':
-        # Use same image model for GIFs (first frame)
-        input_data = {
-            "prompt": USER_PROMPT_GIF,
-            "image_input": [media_url],
-            "system_prompt": SYSTEM_PROMPT_GIF,
-            "temperature": 1,
-            "top_p": 1,
-            "max_completion_tokens": 2048
-        }
-        
-        print(f"  → Sending to Replicate (GIF first frame): {media_url}")
-        output = replicate.run("openai/gpt-4.1-mini", input=input_data)
-    else:
-        # Use image model for static images
-        input_data = {
-            "prompt": USER_PROMPT_IMAGE,
-            "image_input": [media_url],
-            "system_prompt": SYSTEM_PROMPT,
-            "temperature": 1,
-            "top_p": 1,
-            "max_completion_tokens": 2048
-        }
-        
-        print(f"  → Sending to Replicate (Image): {media_url}")
-        output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+    try:
+        relative_path = file_path_obj.relative_to(memes_dir_obj)
+        media_url = f"https://memes.tmn.name/files/{relative_path.as_posix()}"
+    except ValueError:
+        # Fallback if path isn't relative to MEMES_DIR
+        file_name = file_path_obj.name
+        media_url = f"https://memes.tmn.name/files/{file_name}"
     
-    return output
+    temp_dir = None
+    
+    try:
+        if media_type == 'gif':
+            # Extract frames from GIF
+            print(f"  → Extracting frames from GIF: {media_url}")
+            frame_urls, temp_dir = extract_gif_frames(file_path, max_frames=10)
+            
+            if not frame_urls:
+                raise Exception("Failed to extract frames from GIF")
+            
+            # Use image model with multiple frames
+            input_data = {
+                "prompt": USER_PROMPT_GIF,
+                "image_input": frame_urls,
+                "system_prompt": SYSTEM_PROMPT,
+                "temperature": 1,
+                "top_p": 1,
+                "max_completion_tokens": 2048
+            }
+            
+            print(f"  → Sending {len(frame_urls)} frames to Replicate")
+            output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+            
+        elif media_type == 'video':
+            # Extract frames from video
+            print(f"  → Extracting frames from video: {media_url}")
+            frame_urls, temp_dir = extract_video_frames(file_path, fps=2, max_frames=20)
+            
+            if not frame_urls:
+                raise Exception("Failed to extract frames from video")
+            
+            # Use same prompt as GIF (they're both videos)
+            input_data = {
+                "prompt": USER_PROMPT_GIF,
+                "image_input": frame_urls,
+                "system_prompt": SYSTEM_PROMPT,
+                "temperature": 1,
+                "top_p": 1,
+                "max_completion_tokens": 2048
+            }
+            
+            print(f"  → Sending {len(frame_urls)} frames to Replicate")
+            output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+            
+        else:
+            # Use image model for static images
+            input_data = {
+                "prompt": USER_PROMPT_IMAGE,
+                "image_input": [media_url],
+                "system_prompt": SYSTEM_PROMPT,
+                "temperature": 1,
+                "top_p": 1,
+                "max_completion_tokens": 2048
+            }
+            
+            print(f"  → Sending to Replicate (Image): {media_url}")
+            output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+        
+        return output
+        
+    finally:
+        # Cleanup temp frames
+        if temp_dir and temp_dir.exists():
+            try:
+                shutil.rmtree(temp_dir)
+                print(f"  ✓ Cleaned up temp frames")
+            except Exception as e:
+                print(f"  ✗ Cleanup warning: {e}")
 
 def process_meme(meme_id, file_path, media_type):
     """Process a single meme and update database"""
