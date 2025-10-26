@@ -163,6 +163,14 @@ def analyze_meme(file_path, media_type):
             
             print(f"  → Sending {len(frame_urls)} frames to Replicate")
             output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+            
+            # Consume the iterator (output might be an iterator or list)
+            result_list = []
+            for item in output:
+                result_list.append(item)
+                print(f"  → Received chunk: {repr(item)[:100]}")
+            
+            print(f"  → Total chunks: {len(result_list)}")
         else:
             # Use image model for static images
             input_data = {
@@ -176,8 +184,15 @@ def analyze_meme(file_path, media_type):
             
             print(f"  → Sending to Replicate (Image): {media_url}")
             output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+            
+            # Consume the iterator (output might be an iterator or list)
+            result_list = []
+            for item in output:
+                result_list.append(item)
+                print(f"  → Received chunk: {repr(item)[:100]}")
         
-        return output
+        print(f"  → Total chunks: {len(result_list)}")
+        return result_list
         
     finally:
         # Cleanup temp frames
@@ -201,9 +216,16 @@ def process_meme(meme_id, file_path, media_type):
         
         # Convert list to string (if needed)
         if isinstance(result, list):
-            result = "".join(result).strip()
+            print(f"  → Result is list with {len(result)} items: {result}")
+            result = "".join(str(item) for item in result if item).strip()
         
-        print(f"📝 Raw response: {result[:200]}...")
+        print(f"📝 Raw response type: {type(result)}")
+        print(f"📝 Raw response length: {len(result) if result else 0}")
+        print(f"📝 Raw response: {result[:500] if result else '[EMPTY]'}...")
+        
+        # Check if result is empty
+        if not result or len(result) == 0:
+            raise Exception("Empty response from Replicate API")
         
         # Parse JSON response (handle markdown code blocks)
         result_clean = result.strip()
@@ -216,6 +238,10 @@ def process_meme(meme_id, file_path, media_type):
         if result_clean.endswith("```"):
             result_clean = result_clean[:-3]
         result_clean = result_clean.strip()
+        
+        # Check again after cleaning
+        if not result_clean:
+            raise Exception("Empty response after cleaning")
         
         data = json.loads(result_clean)
         

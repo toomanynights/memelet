@@ -534,7 +534,7 @@
         {% if memes %}
         <div class="memes-grid">
             {% for meme in memes %}
-            <a href="/pic/{{ meme.id }}" class="meme-card">
+            <a href="/pic/{{ meme.id }}?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if tag_filter %}tag={{ tag_filter }}&{% endif %}{% if media_filter %}media={{ media_filter }}{% endif %}" class="meme-card">
                 <div style="position: relative;">
                     <img src="{{ meme.image_url }}" alt="Meme" class="meme-image" loading="lazy">
                     {% if meme.media_type == 'gif' %}

@@ -136,6 +136,18 @@ def index():
 @app.route('/pic/<int:meme_id>', methods=['GET', 'POST'])
 def meme_detail(meme_id):
     """Individual meme page with editing capability"""
+    # Get filter parameters for navigation (from GET or POST)
+    if request.method == 'POST':
+        search_query = request.form.get('search', '')
+        status_filter = request.form.get('status_filter', '')
+        tag_filter = request.form.get('tag_filter', '')
+        media_filter = request.form.get('media_filter', '')
+    else:
+        search_query = request.args.get('search', '')
+        status_filter = request.args.get('status', '')
+        tag_filter = request.args.get('tag', '')
+        media_filter = request.args.get('media', '')
+    
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -175,6 +187,22 @@ def meme_detail(meme_id):
             """, (meme_id, int(tag_id)))
         
         conn.commit()
+        conn.close()
+        
+        # Redirect back to index with filters preserved
+        from flask import redirect, url_for
+        redirect_params = []
+        if search_query:
+            redirect_params.append(f"search={search_query}")
+        if status_filter:
+            redirect_params.append(f"status={status_filter}")
+        if tag_filter:
+            redirect_params.append(f"tag={tag_filter}")
+        if media_filter:
+            redirect_params.append(f"media={media_filter}")
+        
+        redirect_url = "/?" + "&".join(redirect_params) if redirect_params else "/"
+        return redirect(redirect_url)
     
     # Get meme details
     cursor.execute("""
@@ -219,11 +247,77 @@ def meme_detail(meme_id):
     """, (meme_id,))
     current_tags = [r['id'] for r in cursor.fetchall()]
     
+    # Get prev/next meme IDs based on current filters
+    # Build filtered query
+    nav_sql = """
+        SELECT DISTINCT m.id, m.created_at
+        FROM memes m
+        WHERE 1=1
+    """
+    nav_params = []
+    
+    if status_filter:
+        nav_sql += " AND m.status = ?"
+        nav_params.append(status_filter)
+    
+    if tag_filter:
+        nav_sql += """ AND m.id IN (
+            SELECT meme_id FROM meme_tags WHERE tag_id = ?
+        )"""
+        nav_params.append(tag_filter)
+    
+    if media_filter:
+        nav_sql += " AND m.media_type = ?"
+        nav_params.append(media_filter)
+    
+    if search_query:
+        nav_sql += """ AND (
+            m.file_path LIKE ? OR
+            m.ref_content LIKE ? OR
+            m.template LIKE ? OR
+            m.caption LIKE ? OR
+            m.description LIKE ? OR
+            m.meaning LIKE ?
+        )"""
+        search_pattern = f"%{search_query}%"
+        nav_params.extend([search_pattern] * 6)
+    
+    nav_sql += " ORDER BY m.created_at DESC"
+    
+    cursor.execute(nav_sql, nav_params)
+    all_filtered_ids = [r['id'] for r in cursor.fetchall()]
+    
+    # Find current position and get prev/next
+    prev_id = None
+    next_id = None
+    try:
+        current_index = all_filtered_ids.index(meme_id)
+        if current_index > 0:
+            prev_id = all_filtered_ids[current_index - 1]
+        if current_index < len(all_filtered_ids) - 1:
+            next_id = all_filtered_ids[current_index + 1]
+    except ValueError:
+        # Current meme not in filtered list (shouldn't happen but handle it)
+        pass
+    
     conn.close()
     
     saved = request.method == 'POST'
     
-    return render_template('meme_detail.html', meme=meme, saved=saved, all_tags=all_tags, current_tags=current_tags)
+    # Build query string for navigation
+    query_params = []
+    if search_query:
+        query_params.append(f"search={search_query}")
+    if status_filter:
+        query_params.append(f"status={status_filter}")
+    if tag_filter:
+        query_params.append(f"tag={tag_filter}")
+    if media_filter:
+        query_params.append(f"media={media_filter}")
+    query_string = "&" + "&".join(query_params) if query_params else ""
+    
+    return render_template('meme_detail.html', meme=meme, saved=saved, all_tags=all_tags, current_tags=current_tags,
+                          prev_id=prev_id, next_id=next_id, query_string=query_string)
 
 @app.route('/api/memes/<int:meme_id>', methods=['DELETE'])
 def delete_meme(meme_id):

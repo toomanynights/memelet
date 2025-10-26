@@ -39,6 +39,39 @@
             background: rgba(255,255,255,0.3);
         }
         
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .nav-button {
+            display: inline-block;
+            color: white;
+            text-decoration: none;
+            font-size: 1rem;
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .nav-button:hover:not(.disabled) {
+            background: rgba(255,255,255,0.3);
+            transform: translateX(5px);
+        }
+        
+        .nav-button.prev:hover:not(.disabled) {
+            transform: translateX(-5px);
+        }
+        
+        .nav-button.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        
         .content-wrapper {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -277,7 +310,22 @@
 </head>
 <body>
     <div class="container">
-        <a href="/" class="back-button">← Back to Collection</a>
+        <div class="navigation">
+            <a href="/" class="back-button">← Back to Collection</a>
+            <div>
+                {% if prev_id %}
+                <a href="/pic/{{ prev_id }}?{{ query_string }}" class="nav-button prev">← Previous</a>
+                {% else %}
+                <span class="nav-button prev disabled">← Previous</span>
+                {% endif %}
+                
+                {% if next_id %}
+                <a href="/pic/{{ next_id }}?{{ query_string }}" class="nav-button next">Next →</a>
+                {% else %}
+                <span class="nav-button next disabled">Next →</span>
+                {% endif %}
+            </div>
+        </div>
         
         <div class="content-wrapper">
             <div class="image-section">
@@ -294,13 +342,13 @@
             <div class="form-section">
                 <h1>Meme Details</h1>
                 
-                {% if saved %}
-                <div class="success-message">
-                    ✓ Changes saved successfully!
-                </div>
-                {% endif %}
-                
                 <form method="POST">
+                    <!-- Preserve filter parameters -->
+                    <input type="hidden" name="search" value="{{ request.args.get('search', '') }}">
+                    <input type="hidden" name="status_filter" value="{{ request.args.get('status', '') }}">
+                    <input type="hidden" name="tag_filter" value="{{ request.args.get('tag', '') }}">
+                    <input type="hidden" name="media_filter" value="{{ request.args.get('media', '') }}">
+                    
                     <div class="form-group">
                         <label for="status">Status</label>
                         <select name="status" id="status">
