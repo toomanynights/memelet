@@ -35,6 +35,15 @@
             transition: background 0.3s ease;
         }
         
+        @media (max-width: 600px) {
+            .back-button {
+                display: block;
+                text-align: center;
+                width: 100%;
+                margin-bottom: 10px;
+            }
+        }
+        
         .back-button:hover {
             background: rgba(255,255,255,0.3);
         }
@@ -44,6 +53,26 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        @media (max-width: 600px) {
+            .navigation {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .navigation > div {
+                display: flex;
+                gap: 10px;
+                width: 100%;
+            }
+            
+            .nav-button {
+                flex: 1;
+                text-align: center;
+            }
         }
         
         .nav-button {
@@ -90,6 +119,10 @@
             border-radius: 12px;
             padding: 20px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            min-width: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
         
         .meme-image {
@@ -97,6 +130,15 @@
             height: auto;
             border-radius: 8px;
             display: block;
+            max-width: 100%;
+        }
+        
+        .meme-video {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            display: block;
+            max-width: 100%;
         }
         
         .image-info {
