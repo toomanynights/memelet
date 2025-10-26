@@ -1,0 +1,24 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+# Database
+*.db
+
+# Logs
+logs/
+*.log
+*.lock
+
+# Output
+output/
+
+# IDE
+.vscode/
+.idea/
+.history/
+.vscode/
