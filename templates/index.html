@@ -379,11 +379,19 @@
         }
         
         .stat-badge.media-video {
-            background: rgba(139, 92, 246, 0.8);
+            background: rgba(234, 55, 27, 0.8);
         }
         
         .stat-badge.media-video.active {
-            background: rgba(139, 92, 246, 1);
+            background: rgba(234, 55, 27, 1);
+        }
+        
+        .stat-badge.media-album {
+            background: rgba(229, 139, 52, 0.8);
+        }
+        
+        .stat-badge.media-album.active {
+            background: rgba(229, 139, 52, 1);
         }
         
         .tags-filter {
@@ -424,32 +432,18 @@
         }
         
         .memes-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 25px;
+            column-count: 4;
+            column-gap: 25px;
             margin-top: 20px;
         }
-        
-        @media (min-width: 1800px) {
-            .memes-grid {
-                grid-template-columns: repeat(5, 1fr);
-            }
-        }
-        
-        @media (max-width: 1400px) {
-            .memes-grid {
-                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            }
-        }
-        
-        @media (max-width: 768px) {
-            .memes-grid {
-                grid-template-columns: 1fr;
-            }
-        }
+        @media (max-width: 1600px) { .memes-grid { column-count: 3; } }
+        @media (max-width: 1100px) { .memes-grid { column-count: 2; } }
+        @media (max-width: 700px)  { .memes-grid { column-count: 1; } }
         
         .meme-card-wrapper {
             position: relative;
+            break-inside: avoid;
+            margin-bottom: 25px;
         }
         
         .meme-card {
@@ -491,10 +485,28 @@
         
         .meme-image {
             width: 100%;
-            height: 300px;
+            height: auto;
+            display: block;
             object-fit: cover;
-            background: #f0f0f0;
+            background: transparent;
         }
+
+        .album-collage {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2px;
+            width: 100%;
+            background: transparent;
+        }
+        .album-collage img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .album-collage .item-0 { grid-column: 1 / span 2; grid-row: 1 / span 2; }
+        .album-collage .item-1 { grid-column: 3; grid-row: 1; }
+        .album-collage .item-2 { grid-column: 3; grid-row: 2; }
         
         .media-indicator {
             position: absolute;
@@ -719,6 +731,12 @@
                     🎥 Videos: {{ media_stats.get('video') }}
                 </a>
                 {% endif %}
+                {% if media_stats.get('album') %}
+                <a href="?media=album{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}"
+                   class="stat-badge media-album {% if media_filter == 'album' %}active{% endif %}">
+                    📚 Albums: {{ media_stats.get('album') }}
+                </a>
+                {% endif %}
             </div>
             
             {% if all_tags %}
@@ -761,15 +779,28 @@
                 <input type="checkbox" class="meme-checkbox" data-id="{{ meme.id }}" onclick="toggleBulkActions(event)">
                 <a href="/pic/{{ meme.id }}?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if tag_filter %}tag={{ tag_filter }}&{% endif %}{% if media_filter %}media={{ media_filter }}{% endif %}" class="meme-card">
                     <div style="position: relative;">
+                        {% if meme.media_type == 'album' %}
+                        <div class="album-collage">
+                            {% for p in meme.album_previews %}
+                            <img src="{{ p }}" class="item-{{ loop.index0 }}" loading="lazy" alt="Album preview">
+                            {% endfor %}
+                        </div>
+                        {% else %}
                         <img src="{{ meme.image_url }}" alt="Meme" class="meme-image" loading="lazy">
+                        {% endif %}
                         {% if meme.media_type == 'gif' %}
                         <span class="media-indicator">GIF</span>
                         {% elif meme.media_type == 'video' %}
                         <span class="media-indicator">VIDEO</span>
+                        {% elif meme.media_type == 'album' %}
+                        <span class="media-indicator">ALBUM</span>
                         {% endif %}
                     </div>
                     <div class="meme-content">
                         <span class="status-badge {{ meme.status }}">{{ meme.status }}</span>
+                        {% if meme.media_type == 'album' and meme.title %}
+                        <p class="meme-description" style="font-weight: 700;">{{ meme.title }}</p>
+                        {% endif %}
                         
                         {% if meme.description %}
                         <p class="meme-description">{{ meme.description }}</p>

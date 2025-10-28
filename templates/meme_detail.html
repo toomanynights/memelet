@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ meme.file_name }} - Memelet</title>
+    <title>{{ (meme.title if meme.media_type == 'album' and meme.title) or meme.file_name }} - Memelet</title>
     <style>
         * {
             margin: 0;
@@ -124,6 +124,33 @@
             display: flex;
             flex-direction: column;
         }
+
+        .album-main {
+            width: 100%;
+            max-height: 70vh;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+        .thumb-strip {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding-top: 12px;
+            margin-top: 10px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .thumb-item { position: relative; }
+        .thumb-item img {
+            width: 120px;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 6px;
+            cursor: grab;
+            opacity: 0.9;
+            transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+        }
+        .thumb-item img:hover { transform: translateY(-2px); opacity: 1; }
+        .thumb-item.dragging { opacity: 0.6; }
         
         .meme-image {
             width: 100%;
@@ -371,7 +398,22 @@
         
         <div class="content-wrapper">
             <div class="image-section">
-                {% if meme.video_url %}
+                {% if meme.media_type == 'album' %}
+                <img id="albumMain" src="{{ (album_items[0].url) if album_items else meme.image_url }}" class="album-main" alt="{{ meme.title or meme.file_name }}">
+                {% if album_items and (album_items|length) > 1 %}
+                <div class="thumb-strip" id="thumbStrip" data-album-id="{{ meme.id }}">
+                    {% for it in album_items %}
+                    <div class="thumb-item" draggable="true" data-path="{{ it.path }}">
+                        <img src="{{ it.url }}" onclick="document.getElementById('albumMain').src='{{ it.url }}'" alt="thumb {{ loop.index }}">
+                    </div>
+                    {% endfor %}
+                </div>
+                <div style="display:flex; gap:10px; margin-top:10px; align-items:center;">
+                    <button type="button" id="saveOrderBtn" class="btn btn-primary" style="display:none;" onclick="saveAlbumOrder()">Save Order</button>
+                    <span id="orderStatus" style="color:#718096; font-size:0.9rem;"></span>
+                </div>
+                {% endif %}
+                {% elif meme.video_url %}
                 <video controls class="meme-video">
                     <source src="{{ meme.video_url }}" type="video/mp4">
                     Your browser does not support the video tag.
@@ -380,7 +422,13 @@
                 <img src="{{ meme.image_url }}" alt="{{ meme.file_name }}" class="meme-image">
                 {% endif %}
                 <div class="image-info">
+                    {% if meme.media_type == 'album' and meme.title %}
+                    <strong>Album:</strong> {{ meme.title }}<br>
+                    {% endif %}
+                    {% if meme.media_type != 'album' %}
                     <strong>Filename:</strong> {{ meme.file_name }}<br>
+                    {% endif %}
+                    <strong>Path:</strong> {{ meme.display_path }}<br>
                     <strong>Added:</strong> {{ meme.created_at }}<br>
                     {% if meme.updated_at %}
                     <strong>Updated:</strong> {{ meme.updated_at }}
@@ -398,6 +446,13 @@
                     <input type="hidden" name="tag_filter" value="{{ request.args.get('tag', '') }}">
                     <input type="hidden" name="media_filter" value="{{ request.args.get('media', '') }}">
                     
+                    {% if meme.media_type == 'album' %}
+                    <div class="form-group">
+                        <label for="title">Album Title</label>
+                        <input type="text" name="title" id="title" value="{{ meme.title }}" placeholder="Album title">
+                    </div>
+                    {% endif %}
+
                     <div class="form-group">
                         <label for="status">Status</label>
                         <select name="status" id="status">
@@ -472,6 +527,84 @@
     </div>
     
     <script>
+        // Drag & drop thumbnail reordering for albums
+        (function(){
+            const strip = document.getElementById('thumbStrip');
+            if (!strip) return;
+            let dragEl = null;
+            const initialOrder = Array.from(strip.querySelectorAll('.thumb-item')).map(div => div.getAttribute('data-path'));
+            strip.addEventListener('dragstart', (e) => {
+                const item = e.target.closest('.thumb-item');
+                if (!item) return;
+                dragEl = item;
+                item.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            strip.addEventListener('dragend', (e) => {
+                const item = e.target.closest('.thumb-item');
+                if (item) item.classList.remove('dragging');
+                dragEl = null;
+                toggleSaveButton();
+            });
+            strip.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                const after = getDragAfterElement(strip, e.clientX);
+                if (after == null) {
+                    strip.appendChild(dragEl);
+                } else {
+                    strip.insertBefore(dragEl, after);
+                }
+            });
+            function getDragAfterElement(container, x) {
+                const els = [...container.querySelectorAll('.thumb-item:not(.dragging)')];
+                return els.reduce((closest, child) => {
+                    const box = child.getBoundingClientRect();
+                    const offset = x - (box.left + box.width / 2);
+                    if (offset < 0 && offset > closest.offset) {
+                        return { offset, element: child };
+                    } else {
+                        return closest;
+                    }
+                }, { offset: Number.NEGATIVE_INFINITY }).element;
+            }
+            function toggleSaveButton(){
+                const current = Array.from(strip.querySelectorAll('.thumb-item')).map(div => div.getAttribute('data-path'));
+                const changed = current.length !== initialOrder.length || current.some((p, i) => p !== initialOrder[i]);
+                const btn = document.getElementById('saveOrderBtn');
+                if (btn) btn.style.display = changed ? 'inline-block' : 'none';
+            }
+        })();
+
+        function saveAlbumOrder() {
+            const strip = document.getElementById('thumbStrip');
+            if (!strip) return;
+            const albumId = parseInt(strip.getAttribute('data-album-id'));
+            const items = Array.from(strip.querySelectorAll('.thumb-item')).map(div => div.getAttribute('data-path'));
+            const statusEl = document.getElementById('orderStatus');
+            statusEl.textContent = 'Saving...';
+            fetch(`/api/albums/${albumId}/order`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ items })
+            })
+            .then(async r => {
+                const text = await r.text();
+                let data;
+                try { data = text ? JSON.parse(text) : {}; } catch (e) { throw new Error(text || 'Non-JSON response'); }
+                if (!r.ok || !data.success) {
+                    const msg = (data && data.error) ? data.error : (text || 'Request failed');
+                    throw new Error(msg);
+                }
+                return data;
+            })
+            .then(() => {
+                statusEl.textContent = 'Saved';
+                setTimeout(() => statusEl.textContent = '', 1500);
+            })
+            .catch(err => {
+                statusEl.textContent = 'Error: ' + err.message;
+            });
+        }
         function deleteMeme() {
             if (!confirm('Are you sure you want to permanently delete this meme?\n\nThis will delete:\n- The database entry\n- All tags\n- The image file\n\nThis action cannot be undone!')) {
                 return;

@@ -2,7 +2,7 @@
 """
 Memelet Web Interface
 """
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 import sqlite3
 from pathlib import Path
 
@@ -33,7 +33,7 @@ def index():
     
     # Build the SQL query based on filters
     sql = """
-        SELECT DISTINCT m.id, m.file_path, m.status, m.media_type, m.ref_content, m.template, 
+        SELECT DISTINCT m.id, m.file_path, m.title, m.status, m.media_type, m.ref_content, m.template, 
                m.caption, m.description, m.meaning, m.created_at
         FROM memes m
         WHERE 1=1
@@ -57,10 +57,11 @@ def index():
         sql += " AND m.media_type = ?"
         params.append(media_filter)
     
-    # Add search filter (search in all text fields and file path)
+    # Add search filter (search in all text fields, title and file path)
     if search_query:
         sql += """ AND (
             m.file_path LIKE ? OR
+            m.title LIKE ? OR
             m.ref_content LIKE ? OR
             m.template LIKE ? OR
             m.caption LIKE ? OR
@@ -68,7 +69,7 @@ def index():
             m.meaning LIKE ?
         )"""
         search_pattern = f"%{search_query}%"
-        params.extend([search_pattern] * 6)
+        params.extend([search_pattern] * 7)
     
     sql += " ORDER BY m.created_at DESC"
     
@@ -101,6 +102,7 @@ def index():
     if search_query:
         count_sql += """ AND (
             m.file_path LIKE ? OR
+            m.title LIKE ? OR
             m.ref_content LIKE ? OR
             m.template LIKE ? OR
             m.caption LIKE ? OR
@@ -108,7 +110,7 @@ def index():
             m.meaning LIKE ?
         )"""
         search_pattern = f"%{search_query}%"
-        count_params.extend([search_pattern] * 6)
+        count_params.extend([search_pattern] * 7)
     
     cursor.execute(count_sql, count_params)
     total_memes = cursor.fetchone()[0]
@@ -154,6 +156,27 @@ def index():
             image_url = MEMES_URL_BASE + relative_path_str
             video_url = None
         
+        album_previews = []
+        if media_type == 'album':
+            # Fetch up to 3 preview items for the album
+            cursor.execute(
+                """
+                SELECT file_path FROM album_items
+                WHERE album_id = ?
+                ORDER BY display_order
+                LIMIT 3
+                """,
+                (meme_id,)
+            )
+            item_paths = [r['file_path'] for r in cursor.fetchall()]
+            for p in item_paths:
+                p_obj = Path(p)
+                try:
+                    rel = p_obj.relative_to(Path(memes_dir))
+                    album_previews.append(MEMES_URL_BASE + rel.as_posix())
+                except ValueError:
+                    album_previews.append(MEMES_URL_BASE + p_obj.name)
+
         # Get tags for this meme
         cursor.execute("""
             SELECT t.id, t.name, t.color
@@ -169,10 +192,12 @@ def index():
             'id': row['id'],
             'image_url': image_url,
             'video_url': video_url,
+            'title': row['title'],
             'status': row['status'],
             'media_type': media_type,
             'description': row['description'],
-            'tags': tags
+            'tags': tags,
+            'album_previews': album_previews
         })
     
     # Get stats (always show all stats, regardless of filters)
@@ -234,6 +259,7 @@ def meme_detail(meme_id):
     if request.method == 'POST':
         # Update meme details
         status = request.form.get('status', 'new')
+        title = request.form.get('title', '').strip()
         ref_content = request.form.get('ref_content', '').strip()
         template = request.form.get('template', '').strip()
         caption = request.form.get('caption', '').strip()
@@ -243,6 +269,7 @@ def meme_detail(meme_id):
         cursor.execute("""
             UPDATE memes 
             SET status = ?,
+                title = ?,
                 ref_content = ?,
                 template = ?,
                 caption = ?,
@@ -250,7 +277,7 @@ def meme_detail(meme_id):
                 meaning = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        """, (status, ref_content or None, template or None, caption or None, 
+        """, (status, title or None, ref_content or None, template or None, caption or None, 
               description or None, meaning or None, meme_id))
         
         # Update tags
@@ -298,7 +325,7 @@ def meme_detail(meme_id):
     
     # Get meme details
     cursor.execute("""
-        SELECT id, file_path, media_type, status, ref_content, template, 
+        SELECT id, file_path, title, media_type, status, ref_content, template, 
                caption, description, meaning, created_at, updated_at
         FROM memes
         WHERE id = ?
@@ -328,6 +355,27 @@ def meme_detail(meme_id):
         except ValueError:
             video_url = MEMES_URL_BASE + file_name
             image_url = MEMES_URL_BASE + f"thumbnails/{video_stem}_thumb.jpg"
+    elif media_type == 'album':
+        # For albums, no single image; compute first item as default image
+        cursor.execute(
+            """
+            SELECT file_path FROM album_items
+            WHERE album_id = ?
+            ORDER BY display_order
+            """,
+            (meme_id,)
+        )
+        album_item_paths = [r['file_path'] for r in cursor.fetchall()]
+        album_item_urls = []
+        for p in album_item_paths:
+            p_obj = Path(p)
+            try:
+                rel = p_obj.relative_to(Path(memes_dir))
+                album_item_urls.append(MEMES_URL_BASE + rel.as_posix())
+            except ValueError:
+                album_item_urls.append(MEMES_URL_BASE + p_obj.name)
+        image_url = album_item_urls[0] if album_item_urls else None
+        video_url = None
     else:
         # For images/gifs, calculate relative path for URL
         try:
@@ -341,12 +389,10 @@ def meme_detail(meme_id):
         'id': row['id'],
         'image_url': image_url,
         'video_url': video_url,
-        'image_url': image_url,
-        'video_url': video_url,
         'file_name': file_name,
         'file_path': row['file_path'],
+        'title': row['title'],
         'status': row['status'],
-        'media_type': media_type,
         'media_type': media_type,
         'ref_content': row['ref_content'] or '',
         'template': row['template'] or '',
@@ -356,6 +402,21 @@ def meme_detail(meme_id):
         'created_at': row['created_at'],
         'updated_at': row['updated_at']
     }
+
+    # Attach album items for gallery if album (provide both url and path in order)
+    album_items = []
+    if media_type == 'album':
+        album_items = [
+            {'url': url, 'path': path}
+            for url, path in zip(album_item_urls, album_item_paths)
+        ]
+
+    # Compute display path per rules: albums -> folder (full), others -> parent folder
+    if media_type == 'album':
+        display_path = str(file_path_obj)
+    else:
+        display_path = str(file_path_obj.parent)
+    meme['display_path'] = display_path
     
     # Get all available tags
     cursor.execute("SELECT id, name, color FROM tags ORDER BY name")
@@ -492,21 +553,7 @@ def meme_detail(meme_id):
         query_params.append(f"media={media_filter}")
     query_string = "&" + "&".join(query_params) if query_params else ""
     
-    return render_template('meme_detail.html', meme=meme, saved=saved, all_tags=all_tags, current_tags=current_tags,
-                          prev_id=prev_id, next_id=next_id, query_string=query_string)
-    # Build query string for navigation
-    query_params = []
-    if search_query:
-        query_params.append(f"search={search_query}")
-    if status_filter:
-        query_params.append(f"status={status_filter}")
-    if tag_filter:
-        query_params.append(f"tag={tag_filter}")
-    if media_filter:
-        query_params.append(f"media={media_filter}")
-    query_string = "&" + "&".join(query_params) if query_params else ""
-    
-    return render_template('meme_detail.html', meme=meme, saved=saved, all_tags=all_tags, current_tags=current_tags,
+    return render_template('meme_detail.html', meme=meme, album_items=album_items, saved=saved, all_tags=all_tags, current_tags=current_tags,
                           prev_id=prev_id, next_id=next_id, query_string=query_string)
 
 @app.route('/api/memes/<int:meme_id>', methods=['DELETE'])
@@ -615,6 +662,70 @@ def bulk_tags():
     conn.close()
     
     return {'success': True, 'added': added_count, 'removed': removed_count}
+
+@app.route('/api/albums/<int:album_id>/order', methods=['POST'])
+def update_album_order(album_id: int):
+    """Update the display order of items in an album."""
+    try:
+        data = request.get_json(silent=True) or {}
+        items = data.get('items', [])  # Expect list of file_path strings in desired order
+
+        if not isinstance(items, list) or not items:
+            return jsonify({'success': False, 'error': 'Invalid or empty items list'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verify album exists and is of type 'album'
+        cursor.execute("SELECT id FROM memes WHERE id = ? AND media_type = 'album'", (album_id,))
+        if cursor.fetchone() is None:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Album not found'}), 404
+
+        # Fetch current item paths for validation
+        cursor.execute(
+            """
+            SELECT file_path FROM album_items
+            WHERE album_id = ?
+            ORDER BY display_order
+            """,
+            (album_id,)
+        )
+        current_rows = cursor.fetchall()
+        current_paths = [r['file_path'] if isinstance(r, sqlite3.Row) else r[0] for r in current_rows]
+
+        # Optional strict validation: ensure same set of items
+        if set(current_paths) != set(items):
+            conn.close()
+            return jsonify({'success': False, 'error': 'Items mismatch with current album'}), 400
+
+        # Temporarily shift existing orders to avoid UNIQUE collisions during in-place updates
+        cursor.execute(
+            "UPDATE album_items SET display_order = display_order + 100000 WHERE album_id = ?",
+            (album_id,)
+        )
+
+        # Update order to the new compact sequence
+        for idx, path in enumerate(items, start=1):
+            cursor.execute(
+                """
+                UPDATE album_items
+                SET display_order = ?
+                WHERE album_id = ? AND file_path = ?
+                """,
+                (idx, album_id, path)
+            )
+
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        try:
+            conn.rollback()
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/bulk-memes-tags', methods=['POST'])
 def bulk_memes_tags():
