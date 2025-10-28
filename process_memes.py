@@ -16,8 +16,8 @@ import cv2
 
 DB_PATH = "memelet.db"
 MEMES_DIR = "/home/basil/memes/files"
-TEMP_FRAMES_DIR = "/home/basil/memes/files/temp/video_frames"
-TEMP_FRAMES_URL = "https://memes.tmn.name/files/temp/video_frames"
+TEMP_FRAMES_DIR = "/home/basil/memes/files/_system/temp/video_frames"
+TEMP_FRAMES_URL = "https://memes.tmn.name/files/_system/temp/video_frames"
 
 SYSTEM_PROMPT = (
     "You're a meme expert. You're very smart and see meanings between the lines. "
@@ -395,7 +395,7 @@ def scan_and_add_new_files():
     
     # Exclude thumbnails and temp directories, and any preview/thumbnail files
     # Also exclude albums directory from regular file scanning
-    excluded_dirs = {'thumbnails', 'temp', 'albums'}
+    excluded_dirs = {'thumbnails', '_system', '_albums'}
     excluded_suffixes = {'_thumb.jpg', '_preview.gif'}
     media_files = [
         f for f in memes_path.rglob('*') 
@@ -459,8 +459,8 @@ def scan_and_add_new_files():
                 new_count += 1
                 print(f"➕ Added: {filename} ({media_type})")
     
-    # Scan for albums in /albums/ directory
-    albums_path = memes_path / 'albums'
+    # Scan for albums in /_albums/ directory
+    albums_path = memes_path / '_albums'
     if albums_path.exists():
         album_count = scan_albums(cursor, albums_path, image_extensions)
         new_count += album_count
@@ -596,8 +596,9 @@ def extract_video_frames(video_path, fps=2, max_frames=20):
         temp_dir = Path(TEMP_FRAMES_DIR) / video_name
         temp_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create thumbnails directory
-        thumbnails_dir = Path(video_path).parent / 'thumbnails'
+        # Create thumbnails directory in _system/thumbnails
+        memes_base = Path(MEMES_DIR)
+        thumbnails_dir = memes_base / '_system' / 'thumbnails' / Path(video_path).parent.relative_to(memes_base)
         thumbnails_dir.mkdir(parents=True, exist_ok=True)
         
         # Save preview GIF in thumbnails directory

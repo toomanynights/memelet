@@ -17,6 +17,10 @@ logs/
 # Output
 output/
 
+# System folders
+files/_albums/
+files/_system/
+
 # IDE
 .vscode/
 .idea/

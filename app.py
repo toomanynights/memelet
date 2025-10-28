@@ -137,16 +137,17 @@ def index():
         except ValueError:
             relative_path_str = file_name
         
-        # For videos, use preview GIF from thumbnails directory
+        # For videos, use preview GIF from thumbnails directory in _system
         if media_type == 'video':
             video_stem = Path(file_name).stem
             try:
-                # Build thumbnail directory relative to memes_dir
-                thumbnail_relative = file_path_obj.parent.relative_to(Path(memes_dir)) / 'thumbnails' / f"{video_stem}_preview.gif"
+                # Build thumbnail path in _system/thumbnails
+                parent_relative = file_path_obj.parent.relative_to(Path(memes_dir))
+                thumbnail_relative = Path('_system') / 'thumbnails' / parent_relative / f"{video_stem}_preview.gif"
                 image_url = MEMES_URL_BASE + thumbnail_relative.as_posix()
             except ValueError:
                 # Fallback if path isn't relative to memes_dir
-                image_url = MEMES_URL_BASE + f"thumbnails/{video_stem}_preview.gif"
+                image_url = MEMES_URL_BASE + f"_system/thumbnails/{video_stem}_preview.gif"
             video_url = MEMES_URL_BASE + relative_path_str
         elif media_type == 'gif':
             # Use the actual GIF (it will animate)
@@ -350,12 +351,13 @@ def meme_detail(meme_id):
         try:
             relative_path = file_path_obj.relative_to(Path(memes_dir))
             video_url = MEMES_URL_BASE + relative_path.as_posix()
-            # Build thumbnail path relative to memes_dir
-            thumbnail_relative = relative_path.parent / 'thumbnails' / f"{video_stem}_thumb.jpg"
+            # Build thumbnail path in _system/thumbnails
+            parent_relative = relative_path.parent
+            thumbnail_relative = Path('_system') / 'thumbnails' / parent_relative / f"{video_stem}_thumb.jpg"
             image_url = MEMES_URL_BASE + thumbnail_relative.as_posix()
         except ValueError:
             video_url = MEMES_URL_BASE + file_name
-            image_url = MEMES_URL_BASE + f"thumbnails/{video_stem}_thumb.jpg"
+            image_url = MEMES_URL_BASE + f"_system/thumbnails/{video_stem}_thumb.jpg"
     elif media_type == 'album':
         # For albums, no single image; compute first item as default image
         cursor.execute(
