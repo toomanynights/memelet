@@ -432,19 +432,20 @@
         }
         
         .memes-grid {
-            column-count: 5;
-            column-gap: 25px;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 25px;
             margin-top: 20px;
+            grid-auto-rows: 8px;
+            grid-auto-flow: row;
         }
-        @media (max-width: 1600px) { .memes-grid { column-count: 4; } }
-        @media (max-width: 1200px) { .memes-grid { column-count: 3; } }
-        @media (max-width: 992px) { .memes-grid { column-count: 2; } }
-        @media (max-width: 576px)  { .memes-grid { column-count: 1; } }
+        @media (max-width: 1600px) { .memes-grid { grid-template-columns: repeat(4, 1fr); } }
+        @media (max-width: 1200px) { .memes-grid { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 992px)  { .memes-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 576px)  { .memes-grid { grid-template-columns: 1fr; } }
         
         .meme-card-wrapper {
             position: relative;
-            break-inside: avoid;
-            margin-bottom: 25px;
         }
         
         .meme-card {
@@ -1106,6 +1107,58 @@
             })
             .catch(error => alert('Error: ' + error));
         }
+    </script>
+    <script>
+        // Masonry-like row-span sizing that preserves left-to-right DOM order
+        function resizeGridItem(item) {
+            const grid = document.querySelector('.memes-grid');
+            if (!grid || !item) return;
+            const styles = getComputedStyle(grid);
+            const rowHeight = parseFloat(styles.getPropertyValue('grid-auto-rows')) || 8;
+            const gap = parseFloat(styles.getPropertyValue('gap')) || 0;
+            const content = item.querySelector('.meme-card');
+            if (!content) return;
+            const height = content.getBoundingClientRect().height;
+            const rowSpan = Math.ceil((height + gap) / (rowHeight + gap));
+            item.style.gridRowEnd = 'span ' + rowSpan;
+        }
+
+        function resizeAllGridItems() {
+            document.querySelectorAll('.meme-card-wrapper').forEach(resizeGridItem);
+        }
+
+        let __gridResizeTO;
+        function debounceResizeAll() {
+            clearTimeout(__gridResizeTO);
+            __gridResizeTO = setTimeout(resizeAllGridItems, 100);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initial pass
+            resizeAllGridItems();
+
+            // Reflow when images load (including lazy-loaded)
+            document.querySelectorAll('.meme-card-wrapper img').forEach(img => {
+                const update = () => {
+                    const item = img.closest('.meme-card-wrapper');
+                    resizeGridItem(item);
+                };
+                if (img.complete) {
+                    update();
+                } else {
+                    img.addEventListener('load', update, { once: true });
+                    img.addEventListener('error', update, { once: true });
+                }
+            });
+
+            // Recalc when window resizes
+            window.addEventListener('resize', debounceResizeAll);
+
+            // Adjust after fonts finish loading (text height changes)
+            if (document.fonts && document.fonts.ready) {
+                document.fonts.ready.then(resizeAllGridItems).catch(() => {});
+            }
+        });
     </script>
 </body>
 </html>
