@@ -1,0 +1,233 @@
+/* Meme Detail Page Specific Styles */
+
+.navigation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+@media (max-width: 600px) {
+    .navigation {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .navigation > div {
+        display: flex;
+        gap: 10px;
+        width: 100%;
+    }
+    
+    .nav-button {
+        flex: 1;
+        text-align: center;
+    }
+}
+
+.nav-button {
+    display: inline-block;
+    color: white;
+    text-decoration: none;
+    font-size: 1rem;
+    padding: 10px 20px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    transition: all 0.3s ease;
+}
+
+.nav-button:hover:not(.disabled) {
+    background: rgba(255,255,255,0.3);
+    transform: translateX(5px);
+}
+
+.nav-button.prev:hover:not(.disabled) {
+    transform: translateX(-5px);
+}
+
+.nav-button.disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+@media (max-width: 600px) {
+    .back-button {
+        display: block;
+        text-align: center;
+        width: 100%;
+        margin-bottom: 10px;
+    }
+}
+
+.content-wrapper {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    margin-top: 20px;
+}
+
+@media (max-width: 968px) {
+    .content-wrapper {
+        grid-template-columns: 1fr;
+    }
+}
+
+.image-section {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    min-width: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.album-main {
+    width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+.thumb-strip {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-top: 12px;
+    margin-top: 10px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.thumb-item {
+    position: relative;
+}
+
+.thumb-item img {
+    width: 120px;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 6px;
+    cursor: grab;
+    opacity: 0.9;
+    transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+}
+
+.thumb-item img:hover {
+    transform: translateY(-2px);
+    opacity: 1;
+}
+
+.thumb-item.dragging {
+    opacity: 0.6;
+}
+
+.meme-image {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    display: block;
+    max-width: 100%;
+}
+
+.meme-video {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    display: block;
+    max-width: 100%;
+}
+
+.image-info {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #e2e8f0;
+    color: #718096;
+    font-size: 0.9rem;
+}
+
+h1 {
+    color: #2d3748;
+    margin-bottom: 20px;
+    font-size: 1.8rem;
+}
+
+.button-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 30px;
+}
+
+.tag-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    min-height: 60px;
+}
+
+.tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    color: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.tag-chip:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.tag-chip input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+}
+
+.tag-chip.selected {
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.5);
+}
+
+.delete-section {
+    margin-top: 40px;
+    padding-top: 30px;
+    border-top: 2px solid #e2e8f0;
+}
+
+.danger-zone {
+    background: #fef2f2;
+    border: 2px solid #fecaca;
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.danger-zone h3 {
+    color: #991b1b;
+    margin-bottom: 10px;
+}
+
+.danger-zone p {
+    color: #7f1d1d;
+    margin-bottom: 15px;
+    font-size: 0.9rem;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 6px 15px;
+    border-radius: 15px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
