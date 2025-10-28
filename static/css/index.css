@@ -146,6 +146,16 @@ h1 {
     background: rgba(255,255,255,0.4);
 }
 
+.bulk-btn-select {
+    background: #059669;
+    color: white;
+}
+
+.bulk-btn-select:hover {
+    background: #047857;
+    transform: translateY(-2px);
+}
+
 .tag-selector-modal {
     display: flex;
     flex-direction: column;

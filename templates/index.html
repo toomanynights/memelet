@@ -136,6 +136,7 @@
         
         {% if memes %}
         <div class="bulk-actions" id="bulkActions">
+            <button class="bulk-btn bulk-btn-select" onclick="toggleSelectAll()">☑️ Select All</button>
             <button class="bulk-btn bulk-btn-tags" onclick="openTagModal()">🏷️ Manage Tags</button>
             <button class="bulk-btn bulk-btn-delete" onclick="bulkDelete()">🗑️ Delete Selected</button>
             <button class="bulk-btn bulk-btn-cancel" onclick="cancelBulkSelect()">Cancel</button>
@@ -274,6 +275,19 @@
         function cancelBulkSelect() {
             document.querySelectorAll('.meme-checkbox').forEach(cb => cb.checked = false);
             document.getElementById('bulkActions').classList.remove('visible');
+        }
+        
+        function toggleSelectAll() {
+            const checkboxes = document.querySelectorAll('.meme-checkbox');
+            const checkedCount = document.querySelectorAll('.meme-checkbox:checked').length;
+            const allSelected = checkedCount === checkboxes.length;
+            
+            // If all are selected, deselect all; otherwise, select all
+            checkboxes.forEach(cb => cb.checked = !allSelected);
+            
+            // Update the bulk actions visibility based on whether any checkboxes are now checked
+            const anyChecked = document.querySelectorAll('.meme-checkbox:checked').length > 0;
+            document.getElementById('bulkActions').classList.toggle('visible', anyChecked);
         }
         
         function handleTagChange(checkbox) {
