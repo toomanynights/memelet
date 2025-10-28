@@ -431,7 +431,12 @@
                     <strong>Path:</strong> {{ meme.display_path }}<br>
                     <strong>Added:</strong> {{ meme.created_at }}<br>
                     {% if meme.updated_at %}
-                    <strong>Updated:</strong> {{ meme.updated_at }}
+                    <strong>Updated:</strong> {{ meme.updated_at }}<br>
+                    {% endif %}
+                    {% if meme.error_message %}
+                    <div style="color: #e53e3e; font-size: 0.9rem; margin-top: 8px; padding: 8px 12px; background: #fed7d7; border-radius: 6px; border-left: 4px solid #e53e3e;">
+                        <strong>⚠️ Error:</strong> {{ meme.error_message }}
+                    </div>
                     {% endif %}
                 </div>
             </div>

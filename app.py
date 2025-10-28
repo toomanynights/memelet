@@ -34,7 +34,7 @@ def index():
     # Build the SQL query based on filters
     sql = """
         SELECT DISTINCT m.id, m.file_path, m.title, m.status, m.media_type, m.ref_content, m.template, 
-               m.caption, m.description, m.meaning, m.created_at
+               m.caption, m.description, m.meaning, m.error_message, m.created_at
         FROM memes m
         WHERE 1=1
     """
@@ -196,6 +196,7 @@ def index():
             'status': row['status'],
             'media_type': media_type,
             'description': row['description'],
+            'error_message': row['error_message'],
             'tags': tags,
             'album_previews': album_previews
         })
@@ -326,7 +327,7 @@ def meme_detail(meme_id):
     # Get meme details
     cursor.execute("""
         SELECT id, file_path, title, media_type, status, ref_content, template, 
-               caption, description, meaning, created_at, updated_at
+               caption, description, meaning, error_message, created_at, updated_at
         FROM memes
         WHERE id = ?
     """, (meme_id,))
@@ -399,6 +400,7 @@ def meme_detail(meme_id):
         'caption': row['caption'] or '',
         'description': row['description'] or '',
         'meaning': row['meaning'] or '',
+        'error_message': row['error_message'] or '',
         'created_at': row['created_at'],
         'updated_at': row['updated_at']
     }

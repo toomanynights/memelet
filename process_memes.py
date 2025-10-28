@@ -75,8 +75,213 @@ def get_db_connection():
     """Get database connection"""
     return sqlite3.connect(DB_PATH)
 
+def _ensure_schema_migrations():
+    """Ensure runtime DB has columns needed by this script (idempotent)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("PRAGMA table_info(memes)")
+        cols = {row[1] for row in cursor.fetchall()}
+        if 'file_size' not in cols:
+            cursor.execute("ALTER TABLE memes ADD COLUMN file_size INTEGER")
+            conn.commit()
+    except Exception:
+        # Non-fatal; continue without blocking scan
+        pass
+    finally:
+        conn.close()
+
+def _get_file_size(path_str: str):
+    try:
+        return os.path.getsize(path_str)
+    except Exception:
+        return None
+
+def _relocate_by_name_and_size(filename: str, size: int):
+    """Search MEMES_DIR for a file matching filename and size. Return absolute path or None."""
+    if not size:
+        return None
+    base = Path(MEMES_DIR)
+    if not base.exists():
+        return None
+    image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
+    gif_extensions = {'.gif'}
+    video_extensions = {'.mp4', '.webm', '.mov', '.avi'}
+    all_extensions = image_extensions | gif_extensions | video_extensions
+    excluded_dirs = {'thumbnails', 'temp'}
+    excluded_suffixes = {'_thumb.jpg', '_preview.gif'}
+
+    candidates = []
+    for f in base.rglob(filename):
+        try:
+            if not f.is_file():
+                continue
+            if f.suffix.lower() not in all_extensions:
+                continue
+            if any(part in excluded_dirs for part in f.parts):
+                continue
+            if any(f.name.endswith(suf) for suf in excluded_suffixes):
+                continue
+            if os.path.getsize(f) == size:
+                candidates.append(str(f.resolve()))
+        except Exception:
+            continue
+    # Prefer first match
+    return candidates[0] if candidates else None
+
+def _verify_existing_files_and_store_sizes():
+    """Before scanning for new memes, verify DB file paths exist; relocate or mark error.
+    Returns summary dict with counts.
+    """
+    _ensure_schema_migrations()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # First, ensure album_items has file_size column
+    try:
+        cursor.execute("PRAGMA table_info(album_items)")
+        cols = {row[1] for row in cursor.fetchall()}
+        if 'file_size' not in cols:
+            cursor.execute("ALTER TABLE album_items ADD COLUMN file_size INTEGER")
+            conn.commit()
+    except Exception:
+        pass
+    
+    cursor.execute("SELECT id, file_path, media_type, status, file_size FROM memes")
+    rows = cursor.fetchall()
+    total = len(rows)
+    ok = 0
+    sized = 0
+    relocated = 0
+    marked_error = 0
+    albums = 0
+    albums_ok = 0
+
+    for meme_id, file_path, media_type, status, file_size in rows:
+        # Albums: verify items; mark album error if any item missing
+        if media_type == 'album':
+            albums += 1
+            cursor.execute("""
+                SELECT file_path, file_size FROM album_items
+                WHERE album_id = ?
+                ORDER BY display_order
+            """, (meme_id,))
+            item_paths_sizes = cursor.fetchall()
+            
+            # Check each album item
+            any_missing = False
+            any_relocated = False
+            any_sized = False
+            
+            for item_path, item_size in item_paths_sizes:
+                if not os.path.exists(item_path):
+                    # Missing item → try to relocate
+                    filename = Path(item_path).name
+                    new_path = _relocate_by_name_and_size(filename, item_size) if item_size else None
+                    
+                    if new_path:
+                        # Update the item path
+                        cursor.execute("""
+                            UPDATE album_items SET file_path=?
+                            WHERE album_id=? AND file_path=?
+                        """, (new_path, meme_id, item_path))
+                        print(f"↪ Relocated album item (album_id={meme_id}, item={filename}) to {new_path}")
+                        any_relocated = True
+                        continue
+                    else:
+                        print(f"✗ Album item missing (album_id={meme_id}, item={filename})")
+                        any_missing = True
+                        break
+                else:
+                    # File exists; store size if missing
+                    if item_size is None:
+                        size = _get_file_size(item_path)
+                        if size is not None:
+                            cursor.execute("""
+                                UPDATE album_items SET file_size=?
+                                WHERE album_id=? AND file_path=?
+                            """, (size, meme_id, item_path))
+                            print(f"✓ Stored size {size} for album item (album_id={meme_id})")
+                            any_sized = True
+            
+            if any_missing:
+                cursor.execute("""
+                    UPDATE memes
+                    SET status='error', error_message=? , updated_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                """, (f"Album items missing", meme_id))
+                marked_error += 1
+                print(f"✗ Album marked error (id={meme_id})")
+            else:
+                ok += 1
+                albums_ok += 1
+                if any_sized:
+                    sized += 1
+                if any_relocated:
+                    relocated += 1
+            continue
+
+        # Non-album media
+        if os.path.exists(file_path):
+            # Store size if missing
+            if file_size is None:
+                size = _get_file_size(file_path)
+                if size is not None:
+                    cursor.execute(
+                        "UPDATE memes SET file_size=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (size, meme_id),
+                    )
+                    sized += 1
+                    print(f"✓ Stored size {size} for id={meme_id}")
+            ok += 1
+            continue
+
+            
+        # Missing file → attempt relocation if we have size; if not, mark error
+        size_for_search = file_size
+        if size_for_search is None:
+            print(f"✗ Missing file with no stored size → marking error (id={meme_id})")
+            cursor.execute(
+                "UPDATE memes SET status='error', error_message=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                ("File missing; no stored size to relocate", meme_id),
+            )
+            marked_error += 1
+            continue
+
+        filename = Path(file_path).name
+        new_path = _relocate_by_name_and_size(filename, size_for_search)
+        if new_path:
+            cursor.execute(
+                "UPDATE memes SET file_path=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (new_path, meme_id),
+            )
+            relocated += 1
+            print(f"↪ Relocated id={meme_id} to {new_path}")
+        else:
+            cursor.execute(
+                "UPDATE memes SET status='error', error_message=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                ("File missing; relocation failed", meme_id),
+            )
+            marked_error += 1
+            print(f"✗ Missing file; relocation failed (id={meme_id})")
+
+    conn.commit()
+    conn.close()
+    print(f"Pre-scan check: total={total}, ok={ok} (albums={albums}, albums_ok={albums_ok}), sized={sized}, relocated={relocated}, errors={marked_error}")
+    return {
+        'total': total,
+        'ok': ok,
+        'sized': sized,
+        'relocated': relocated,
+        'errors': marked_error,
+        'albums': albums,
+        'albums_ok': albums_ok,
+    }
+
 def scan_and_add_new_files():
     """Scan memes directory and add new files to database"""
+    # Verify existing records and attempt relocations before scanning for new memes
+    _verify_existing_files_and_store_sizes()
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -120,12 +325,43 @@ def scan_and_add_new_files():
         # Check if file already exists in database
         cursor.execute("SELECT id FROM memes WHERE file_path = ?", (file_path,))
         if cursor.fetchone() is None:
-            cursor.execute(
-                "INSERT INTO memes (file_path, media_type, status) VALUES (?, ?, 'new')",
-                (file_path, media_type)
-            )
-            new_count += 1
-            print(f"➕ Added: {media_file.name} ({media_type})")
+            # Get file size and check for duplicates by name+size
+            filename = media_file.name
+            size = _get_file_size(file_path)
+            
+            # Check for duplicates
+            if size is not None:
+                # Check if another meme has the same filename and size
+                cursor.execute(
+                    "SELECT id FROM memes WHERE file_size = ? AND file_path LIKE ? LIMIT 1",
+                    (size, f"%{filename}")
+                )
+                duplicate = cursor.fetchone()
+                
+                if duplicate:
+                    # Found a duplicate - add it as an error
+                    cursor.execute(
+                        "INSERT INTO memes (file_path, media_type, status, file_size, error_message) VALUES (?, ?, 'error', ?, ?)",
+                        (file_path, media_type, size, f"Duplicate of meme {duplicate[0]}")
+                    )
+                    new_count += 1
+                    print(f"⚠️ Duplicate: {filename} (matches meme {duplicate[0]})")
+                else:
+                    # No duplicate - add normally
+                    cursor.execute(
+                        "INSERT INTO memes (file_path, media_type, status, file_size) VALUES (?, ?, 'new', ?)",
+                        (file_path, media_type, size)
+                    )
+                    new_count += 1
+                    print(f"➕ Added: {filename} ({media_type})")
+            else:
+                # No size available - just add normally
+                cursor.execute(
+                    "INSERT INTO memes (file_path, media_type, status) VALUES (?, ?, 'new')",
+                    (file_path, media_type)
+                )
+                new_count += 1
+                print(f"➕ Added: {filename} ({media_type})")
     
     # Scan for albums in /albums/ directory
     albums_path = memes_path / 'albums'
@@ -178,10 +414,17 @@ def scan_albums(cursor, albums_path, image_extensions):
         # Register each file in album_items table
         for order, album_file in enumerate(album_files, start=1):
             file_path = str(album_file.resolve())
-            cursor.execute(
-                "INSERT INTO album_items (album_id, file_path, display_order) VALUES (?, ?, ?)",
-                (album_id, file_path, order)
-            )
+            file_size = _get_file_size(file_path)
+            if file_size is not None:
+                cursor.execute(
+                    "INSERT INTO album_items (album_id, file_path, display_order, file_size) VALUES (?, ?, ?, ?)",
+                    (album_id, file_path, order, file_size)
+                )
+            else:
+                cursor.execute(
+                    "INSERT INTO album_items (album_id, file_path, display_order) VALUES (?, ?, ?)",
+                    (album_id, file_path, order)
+                )
         
         new_album_count += 1
         print(f"➕ Added: {album_title} (album with {len(album_files)} items)")
@@ -587,6 +830,43 @@ def process_pending_memes(include_errors=False):
     error_count = 0
     
     for meme_id, file_path, media_type in pending_memes:
+        # If retrying errors, validate file existence and try relocation before processing
+        if include_errors:
+            # Fetch current status and size
+            conn2 = get_db_connection()
+            cur2 = conn2.cursor()
+            cur2.execute("SELECT status, file_size FROM memes WHERE id=?", (meme_id,))
+            row = cur2.fetchone()
+            conn2.close()
+            status = row[0] if row else None
+            file_size = row[1] if row else None
+
+            if media_type == 'album':
+                # Check album items exist; if OK proceed, else leave as error and continue
+                conn3 = get_db_connection()
+                c3 = conn3.cursor()
+                c3.execute("SELECT file_path FROM album_items WHERE album_id=? ORDER BY display_order", (meme_id,))
+                missing = [p for (p,) in c3.fetchall() if not os.path.exists(p)]
+                conn3.close()
+                if missing:
+                    print(f"✗ Album still missing items (id={meme_id}); skipping")
+                    continue
+            else:
+                if not os.path.exists(file_path):
+                    filename = Path(file_path).name
+                    new_path = _relocate_by_name_and_size(filename, file_size) if file_size else None
+                    if new_path:
+                        conn_fix = get_db_connection()
+                        cur_fix = conn_fix.cursor()
+                        cur_fix.execute("UPDATE memes SET file_path=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (new_path, meme_id))
+                        conn_fix.commit()
+                        conn_fix.close()
+                        print(f"↪ Relocated id={meme_id} to {new_path}; proceeding to process")
+                        file_path = new_path
+                    else:
+                        print(f"✗ Missing file (id={meme_id}); cannot process")
+                        continue
+
         if process_meme(meme_id, file_path, media_type):
             success_count += 1
         else:
