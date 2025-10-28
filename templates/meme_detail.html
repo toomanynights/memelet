@@ -383,13 +383,13 @@
             <a href="/" class="back-button">← Back to Collection</a>
             <div>
                 {% if prev_id %}
-                <a href="/pic/{{ prev_id }}?{{ query_string }}" class="nav-button prev">← Previous</a>
+                <a href="/meme/{{ prev_id }}?{{ query_string }}" class="nav-button prev">← Previous</a>
                 {% else %}
                 <span class="nav-button prev disabled">← Previous</span>
                 {% endif %}
                 
                 {% if next_id %}
-                <a href="/pic/{{ next_id }}?{{ query_string }}" class="nav-button next">Next →</a>
+                <a href="/meme/{{ next_id }}?{{ query_string }}" class="nav-button next">Next →</a>
                 {% else %}
                 <span class="nav-button next disabled">Next →</span>
                 {% endif %}

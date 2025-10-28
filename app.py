@@ -239,7 +239,7 @@ def index():
         show_pagination=total_pages > 1
     )
 
-@app.route('/pic/<int:meme_id>', methods=['GET', 'POST'])
+@app.route('/meme/<int:meme_id>', methods=['GET', 'POST'])
 def meme_detail(meme_id):
     """Individual meme page with editing capability"""
     # Get filter parameters for navigation (from GET or POST)

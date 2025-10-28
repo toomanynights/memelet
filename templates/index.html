@@ -779,7 +779,7 @@
             {% for meme in memes %}
             <div class="meme-card-wrapper">
                 <input type="checkbox" class="meme-checkbox" data-id="{{ meme.id }}" onclick="toggleBulkActions(event)">
-                <a href="/pic/{{ meme.id }}?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if tag_filter %}tag={{ tag_filter }}&{% endif %}{% if media_filter %}media={{ media_filter }}{% endif %}" class="meme-card">
+                <a href="/meme/{{ meme.id }}?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if tag_filter %}tag={{ tag_filter }}&{% endif %}{% if media_filter %}media={{ media_filter }}{% endif %}" class="meme-card">
                     <div style="position: relative;">
                         {% if meme.media_type == 'album' %}
                         <div class="album-collage">
