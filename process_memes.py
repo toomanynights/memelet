@@ -75,6 +75,76 @@ def get_db_connection():
     """Get database connection"""
     return sqlite3.connect(DB_PATH)
 
+def parse_tags_from_filename(file_path):
+    """Parse tags from filename and folder path based on tags that have parse_from_filename enabled.
+    Returns list of tag IDs that match the filename or folder path.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Get all tags that have parse_from_filename enabled
+    cursor.execute("""
+        SELECT id, name FROM tags 
+        WHERE parse_from_filename = 1
+    """)
+    parseable_tags = cursor.fetchall()
+    conn.close()
+    
+    if not parseable_tags:
+        return []
+    
+    # Get filename/directory name and folder path
+    path_obj = Path(file_path)
+    
+    # Check if this is an album (path points to a directory or ends in 'albums' folder)
+    # Use path_obj.is_dir() to check if path exists as directory, but also handle when it doesn't exist yet
+    is_album = path_obj.parent.name == 'albums' if path_obj.parts else False
+    
+    # Get the name part and folder path
+    if is_album:
+        # For albums, use the directory name
+        name_part = path_obj.name.lower()
+        folder_path = str(path_obj.parent).lower()
+    else:
+        # For regular files
+        name_part = path_obj.stem.lower()
+        folder_path = str(path_obj.parent).lower()
+    
+    matching_tag_ids = []
+    
+    for tag_id, tag_name in parseable_tags:
+        tag_lower = tag_name.lower()
+        
+        # Check if tag name appears in filename/directory name (substring search)
+        if tag_lower in name_part:
+            matching_tag_ids.append(tag_id)
+        # Also check if tag name appears in any part of the folder path
+        elif tag_lower in folder_path:
+            matching_tag_ids.append(tag_id)
+    
+    return matching_tag_ids
+
+def apply_tags_to_meme(meme_id, tag_ids):
+    """Apply given tags to a meme. Skip tags that already exist."""
+    if not tag_ids:
+        return
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    for tag_id in tag_ids:
+        try:
+            cursor.execute("""
+                INSERT INTO meme_tags (meme_id, tag_id)
+                VALUES (?, ?)
+            """, (meme_id, tag_id))
+        except sqlite3.IntegrityError:
+            # Tag already exists for this meme, skip
+            pass
+    
+    conn.commit()
+    conn.close()
+
 def _ensure_schema_migrations():
     """Ensure runtime DB has columns needed by this script (idempotent)."""
     conn = get_db_connection()
@@ -278,6 +348,32 @@ def _verify_existing_files_and_store_sizes():
         'albums_ok': albums_ok,
     }
 
+def parse_tags_for_all_memes():
+    """Parse tags from filenames for all memes in the database."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Get all memes
+    cursor.execute("SELECT id, file_path FROM memes")
+    memes = cursor.fetchall()
+    
+    total_parsed = 0
+    total_tags = 0
+    
+    for meme_id, file_path in memes:
+        # Parse tags from filename
+        tag_ids = parse_tags_from_filename(file_path)
+        
+        if tag_ids:
+            # Apply tags to meme
+            apply_tags_to_meme(meme_id, tag_ids)
+            total_parsed += 1
+            total_tags += len(tag_ids)
+            print(f"  ✓ Applied {len(tag_ids)} tag(s) to meme id={meme_id}")
+    
+    conn.close()
+    print(f"🏷️  Tag parsing complete: {total_parsed} memes tagged with {total_tags} total tags")
+
 def scan_and_add_new_files():
     """Scan memes directory and add new files to database"""
     # Verify existing records and attempt relocations before scanning for new memes
@@ -373,6 +469,11 @@ def scan_and_add_new_files():
     conn.close()
     
     print(f"\n✅ Scan complete. Added {new_count} new file(s)")
+    
+    # After scanning, parse tags for all memes
+    print("\n🏷️  Parsing tags from filenames...")
+    parse_tags_for_all_memes()
+    
     return new_count
 
 def scan_albums(cursor, albums_path, image_extensions):
