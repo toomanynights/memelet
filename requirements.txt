@@ -1,0 +1,11 @@
+# Core web framework
+Flask>=3.0.0
+
+# AI image analysis
+replicate>=1.0.0
+
+# Image processing
+Pillow>=10.0.0
+
+# Video processing
+opencv-python>=4.8.0
