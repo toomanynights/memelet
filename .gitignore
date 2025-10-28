@@ -17,9 +17,13 @@ logs/
 # Output
 output/
 
-# System folders
-files/_albums/
-files/_system/
+# System folders (ignore contents but keep directory structure)
+files/_albums/*
+!files/_albums/.gitkeep
+files/_system/temp/*
+!files/_system/temp/.gitkeep
+files/_system/thumbnails/*
+!files/_system/thumbnails/.gitkeep
 
 # IDE
 .vscode/
