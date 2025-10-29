@@ -172,6 +172,25 @@
     </div>
     
     <script>
+        // Auto-resize textareas to fit content on load and input
+        (function autoResizeTextareas() {
+            const areas = document.querySelectorAll('textarea');
+            const MIN_PX = 100;
+
+            function resize(el) {
+                el.style.height = 'auto';
+                el.style.overflow = 'hidden';
+                el.style.height = Math.max(el.scrollHeight, MIN_PX) + 'px';
+            }
+
+            areas.forEach(el => {
+                resize(el);
+                el.addEventListener('input', () => resize(el));
+            });
+
+            window.addEventListener('load', () => areas.forEach(resize));
+        })();
+
         // Drag & drop thumbnail reordering for albums
         (function(){
             const strip = document.getElementById('thumbStrip');
