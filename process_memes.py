@@ -1018,6 +1018,11 @@ def main():
         help='Process memes with "error" status in addition to "new" ones'
     )
     parser.add_argument(
+        '--process-one',
+        type=int,
+        help='Process a single meme by its id'
+    )
+    parser.add_argument(
         '--stats',
         action='store_true',
         help='Show database statistics'
@@ -1036,6 +1041,24 @@ def main():
         return
     
     # Execute requested actions
+    if args.process_one is not None:
+        meme_id = int(args.process_one)
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, file_path, media_type FROM memes WHERE id = ?", (meme_id,))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            print(f"❌ Meme id={meme_id} not found")
+            return
+        _id, file_path, media_type = row
+        print("================================")
+        print(f"{datetime.now()}: Starting single meme processing (id={meme_id})")
+        print("================================")
+        ok = process_meme(_id, file_path, media_type)
+        print(f"{datetime.now()}: Single meme processing {'succeeded' if ok else 'failed'} (id={meme_id})")
+        print("")
+        return
     if args.stats:
         show_stats()
     

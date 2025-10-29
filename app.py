@@ -842,6 +842,101 @@ def trigger_action():
     
     return {'success': False, 'message': 'Invalid action'}
 
+@app.route('/api/memes/<int:meme_id>/process', methods=['POST'])
+def process_single_meme(meme_id: int):
+    """Trigger processing of a single meme in background and log to scan.log."""
+    import subprocess, os
+    from datetime import datetime
+
+    script_dir = "/home/basil/memes"
+    venv_python = f"{script_dir}/venv/bin/python"
+    script_path = f"{script_dir}/process_memes.py"
+    log_file = f"{script_dir}/logs/scan.log"
+
+    # Mark meme as processing in DB
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE memes
+            SET status='processing', error_message=NULL, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (meme_id,)
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    # Ensure logs directory exists
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+    # Prepend a header line to the log synchronously
+    try:
+        with open(log_file, 'a', encoding='utf-8') as lf:
+            lf.write("================================\n")
+            lf.write(f"{datetime.now()}: Triggered single meme processing via UI (id={meme_id})\n")
+            lf.write("================================\n")
+    except Exception:
+        # Non-fatal
+        pass
+
+    # Launch processing in background, append stdout/stderr to log
+    try:
+        # Prefer venv python if exists, else rely on system python
+        python_exec = venv_python if os.path.exists(venv_python) else "python3"
+        with open(log_file, 'a', encoding='utf-8') as lf:
+            subprocess.Popen(
+                [python_exec, script_path, '--process-one', str(meme_id)],
+                cwd=script_dir,
+                stdout=lf,
+                stderr=lf,
+                start_new_session=True
+            )
+        return {'success': True, 'message': 'Processing started'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}, 500
+
+@app.route('/api/memes/<int:meme_id>', methods=['GET'])
+def get_meme(meme_id: int):
+    """Return current meme fields for polling/progress UI."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT id, title, status, media_type, file_path, ref_content, template, caption, description, meaning, error_message, created_at, updated_at
+        FROM memes WHERE id = ?
+        """,
+        (meme_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return {'success': False, 'error': 'Meme not found'}, 404
+    return {
+        'success': True,
+        'meme': {
+            'id': row['id'],
+            'title': row['title'],
+            'status': row['status'],
+            'media_type': row['media_type'],
+            'file_path': row['file_path'],
+            'ref_content': row['ref_content'],
+            'template': row['template'],
+            'caption': row['caption'],
+            'description': row['description'],
+            'meaning': row['meaning'],
+            'error_message': row['error_message'],
+            'created_at': row['created_at'],
+            'updated_at': row['updated_at'],
+        }
+    }
+
 @app.route('/tags')
 def tags():
     """Tag management page"""

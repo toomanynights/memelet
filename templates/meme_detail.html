@@ -79,6 +79,10 @@
                     </div>
                     {% endif %}
                 </div>
+                <div style="margin-top: 15px; display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-warning" onclick="processThisMeme()">Analyze This Meme</button>
+                    <span id="processStatus" style="color:#718096; font-size:0.9rem;"></span>
+                </div>
             </div>
             
             <div class="form-section">
@@ -190,6 +194,83 @@
 
             window.addEventListener('load', () => areas.forEach(resize));
         })();
+
+        function processThisMeme() {
+            const statusEl = document.getElementById('processStatus');
+            statusEl.textContent = 'Starting…';
+            fetch('/api/memes/{{ meme.id }}/process', {
+                method: 'POST',
+                headers: { 'Accept': 'application/json' }
+            })
+            .then(r => r.json().catch(() => ({})).then(j => ({ ok: r.ok, body: j })))
+            .then(({ ok, body }) => {
+                if (!ok || !body.success) {
+                    throw new Error((body && (body.error || body.message)) || 'Request failed');
+                }
+                statusEl.textContent = 'Processing…';
+                startMemePolling();
+            })
+            .catch(err => {
+                statusEl.textContent = 'Error: ' + err.message;
+            });
+        }
+
+        let pollTimer = null;
+        function startMemePolling(){
+            if (pollTimer) clearInterval(pollTimer);
+            const statusEl = document.getElementById('processStatus');
+            const id = {{ meme.id }};
+            function applyValues(m){
+                const map = [
+                    ['caption','caption'],
+                    ['description','description'],
+                    ['meaning','meaning'],
+                    ['template','template'],
+                    ['ref_content','ref_content']
+                ];
+                for (const [field, elId] of map){
+                    const el = document.getElementById(elId);
+                    if (el && typeof m[field] === 'string'){
+                        el.value = m[field];
+                        // inline resize
+                        el.style.height = 'auto';
+                        el.style.overflow = 'hidden';
+                        el.style.height = Math.max(el.scrollHeight, 100) + 'px';
+                    }
+                }
+            }
+            const tick = () => {
+                fetch(`/api/memes/${id}`)
+                  .then(r => r.json())
+                  .then(data => {
+                      if (!data || !data.success) throw new Error('Status fetch failed');
+                      const m = data.meme;
+                      const st = (m.status || '').toLowerCase();
+                      if (st === 'processing' || st === 'new' || st === 'error' || st === 'done'){
+                          if (st === 'done'){
+                              applyValues(m);
+                              statusEl.textContent = 'Completed';
+                              clearInterval(pollTimer);
+                              pollTimer = null;
+                          } else if (st === 'error'){
+                              statusEl.textContent = 'Error: ' + (m.error_message || 'Processing failed');
+                              clearInterval(pollTimer);
+                              pollTimer = null;
+                          } else {
+                              statusEl.textContent = 'Processing…';
+                          }
+                      }
+                  })
+                  .catch((e) => {
+                      // On fetch error, offer manual refresh
+                      clearInterval(pollTimer);
+                      pollTimer = null;
+                      statusEl.textContent = 'Error: ' + (e && e.message ? e.message : 'Polling failed');
+                  });
+            };
+            tick();
+            pollTimer = setInterval(tick, 2000);
+        }
 
         // Drag & drop thumbnail reordering for albums
         (function(){
