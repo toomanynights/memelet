@@ -81,7 +81,7 @@
                 </div>
                 <div style="margin-top: 15px; display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
                     <button type="button" class="btn btn-warning" onclick="processThisMeme()">Analyze This Meme</button>
-                    <span id="processStatus" style="color:#718096; font-size:0.9rem;"></span>
+                    <span id="processStatus" data-initial-updated-at="{{ meme.updated_at or '' }}" style="color:#718096; font-size:0.9rem;"></span>
                 </div>
             </div>
             
@@ -216,10 +216,15 @@
         }
 
         let pollTimer = null;
+        let seenProcessing = false;
+        let firstSeenUpdatedAt = null;
         function startMemePolling(){
             if (pollTimer) clearInterval(pollTimer);
+            seenProcessing = false;
+            firstSeenUpdatedAt = null;
             const statusEl = document.getElementById('processStatus');
             const id = {{ meme.id }};
+            const baselineUpdatedAt = statusEl.getAttribute('data-initial-updated-at') || '';
             function applyValues(m){
                 const map = [
                     ['caption','caption'],
@@ -240,18 +245,35 @@
                 }
             }
             const tick = () => {
-                fetch(`/api/memes/${id}`)
+                fetch(`/api/memes/${id}?t=${Date.now()}` , { cache: 'no-store' })
                   .then(r => r.json())
                   .then(data => {
                       if (!data || !data.success) throw new Error('Status fetch failed');
                       const m = data.meme;
+                      if (firstSeenUpdatedAt === null) firstSeenUpdatedAt = m.updated_at || '';
                       const st = (m.status || '').toLowerCase();
                       if (st === 'processing' || st === 'new' || st === 'error' || st === 'done'){
-                          if (st === 'done'){
-                              applyValues(m);
-                              statusEl.textContent = 'Completed';
-                              clearInterval(pollTimer);
-                              pollTimer = null;
+                          if (st === 'processing'){
+                              seenProcessing = true;
+                              statusEl.textContent = 'Processing…';
+                          } else if (st === 'done'){
+                              // Accept completion when updated_at changed since the first poll of this run
+                              if (m.updated_at && m.updated_at !== firstSeenUpdatedAt){
+                                  // Small delay to ensure readers see committed values
+                                  setTimeout(() => {
+                                      fetch(`/api/memes/${id}?t=${Date.now()}` , { cache: 'no-store' })
+                                        .then(r2 => r2.json())
+                                        .then(d2 => { if (d2 && d2.success) applyValues(d2.meme); })
+                                        .finally(() => {
+                                            statusEl.textContent = 'Completed';
+                                            clearInterval(pollTimer);
+                                            pollTimer = null;
+                                        });
+                                  }, 300);
+                              } else {
+                                  // Not yet reflected; continue polling, keep UX as Processing
+                                  statusEl.textContent = 'Processing…';
+                              }
                           } else if (st === 'error'){
                               statusEl.textContent = 'Error: ' + (m.error_message || 'Processing failed');
                               clearInterval(pollTimer);
@@ -269,7 +291,7 @@
                   });
             };
             tick();
-            pollTimer = setInterval(tick, 2000);
+            pollTimer = setInterval(tick, 1000);
         }
 
         // Drag & drop thumbnail reordering for albums

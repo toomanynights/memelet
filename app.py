@@ -918,7 +918,7 @@ def get_meme(meme_id: int):
     conn.close()
     if not row:
         return {'success': False, 'error': 'Meme not found'}, 404
-    return {
+    resp = jsonify({
         'success': True,
         'meme': {
             'id': row['id'],
@@ -935,7 +935,10 @@ def get_meme(meme_id: int):
             'created_at': row['created_at'],
             'updated_at': row['updated_at'],
         }
-    }
+    })
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 @app.route('/tags')
 def tags():
