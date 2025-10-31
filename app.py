@@ -915,9 +915,14 @@ def get_meme(meme_id: int):
         (meme_id,)
     )
     row = cursor.fetchone()
-    conn.close()
     if not row:
+        conn.close()
         return {'success': False, 'error': 'Meme not found'}, 404
+    # Fetch current tag ids for this meme
+    cursor.execute("SELECT tag_id FROM meme_tags WHERE meme_id = ?", (meme_id,))
+    tag_rows = cursor.fetchall()
+    tag_ids = [r[0] if not isinstance(r, sqlite3.Row) else r['tag_id'] for r in tag_rows]
+    conn.close()
     resp = jsonify({
         'success': True,
         'meme': {
@@ -934,6 +939,7 @@ def get_meme(meme_id: int):
             'error_message': row['error_message'],
             'created_at': row['created_at'],
             'updated_at': row['updated_at'],
+            'tag_ids': tag_ids,
         }
     })
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'

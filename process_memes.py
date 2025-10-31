@@ -73,7 +73,7 @@ def _normalize_for_db(value):
 
 def get_db_connection():
     """Get database connection"""
-    return sqlite3.connect(DB_PATH)
+    return sqlite3.connect(DB_PATH, timeout=10)
 
 def parse_tags_from_filename(file_path):
     """Parse tags from filename and folder path based on tags that have parse_from_filename enabled.
@@ -123,6 +123,59 @@ def parse_tags_from_filename(file_path):
             matching_tag_ids.append(tag_id)
     
     return matching_tag_ids
+
+def _load_ai_suggestable_tags():
+    """Return list of (name, description) for tags where ai_can_suggest is enabled."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT name, description
+        FROM tags
+        WHERE ai_can_suggest = 1
+        ORDER BY name
+        """
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [(name, description if description is not None else "") for name, description in rows]
+
+def _build_prompt_with_tag_suggestions(base_prompt: str) -> str:
+    """Injects a 'tags' property into the prompt spec and appends a list of suggestable tags.
+
+    The inserted property text:
+    tags: "Given all information determined about this meme, use ONLY the tags from the provided list below. Provide a comma-separated list of tags that fit. Do NOT invent new tags. If none of the provided tags fit, omit this property."
+    """
+    # Ensure property is inserted before the final '}' of the prompt spec
+    base = base_prompt.rstrip()
+    insert_text = (
+        'tags: "Given all information determined about this meme, use ONLY the tags from the provided list below. Provide a comma-separated list of tags that fit. Do NOT invent new tags. If none of the provided tags fit, omit this property."'
+    )
+
+    if base.endswith('}'):
+        # Avoid f-string literal brace issue by concatenation
+        prompt_with_property = base[:-1] + ", " + insert_text + "}"
+    else:
+        # Fallback: just append the instruction plainly
+        prompt_with_property = f"{base}\n{insert_text}"
+
+    # Append available tags and descriptions (AI-suggestable only)
+    tags = _load_ai_suggestable_tags()
+    if tags:
+        lines = []
+        for name, description in tags:
+            if description and description.strip():
+                lines.append(f"- {name}: {description}")
+            else:
+                lines.append(f"- {name}")
+        prompt_with_list = (
+            prompt_with_property
+            + "\n\nAvailable tags (use ONLY from this list):\n"
+            + "\n".join(lines)
+        )
+        return prompt_with_list
+
+    return prompt_with_property
 
 def apply_tags_to_meme(meme_id, tag_ids):
     """Apply given tags to a meme. Skip tags that already exist."""
@@ -373,6 +426,78 @@ def parse_tags_for_all_memes():
     
     conn.close()
     print(f"🏷️  Tag parsing complete: {total_parsed} memes tagged with {total_tags} total tags")
+
+def _parse_ai_suggested_tag_names(value):
+    """Parse the 'tags' property from AI response into a list of names.
+    Accepts comma-separated string or list of strings. Returns cleaned name list.
+    """
+    if value is None:
+        return []
+    names = []
+    if isinstance(value, str):
+        # split by commas and newlines
+        parts = [p.strip() for p in value.replace("\n", ",").split(",")]
+        names = [p.strip().strip('"\'') for p in parts if p.strip()]
+    elif isinstance(value, list):
+        for item in value:
+            if not item:
+                continue
+            if isinstance(item, str):
+                cleaned = item.strip().strip('"\'')
+                if cleaned:
+                    names.append(cleaned)
+            else:
+                try:
+                    s = str(item).strip()
+                    if s:
+                        names.append(s)
+                except Exception:
+                    continue
+    else:
+        try:
+            s = str(value)
+            return _parse_ai_suggested_tag_names(s)
+        except Exception:
+            return []
+    # dedupe while preserving order
+    seen = set()
+    unique = []
+    for n in names:
+        if n.lower() in seen:
+            continue
+        seen.add(n.lower())
+        unique.append(n)
+    return unique
+
+def _map_tag_names_to_ids(tag_names):
+    """Map list of tag names to existing tag IDs limited to ai_can_suggest=1.
+    Returns (tag_ids, applied_names, unknown_names).
+    """
+    if not tag_names:
+        return [], [], []
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name FROM tags WHERE ai_can_suggest = 1")
+    rows = cur.fetchall()
+    conn.close()
+    name_to_row = {name.lower(): (tid, name) for (tid, name) in [(r[0], r[1]) for r in rows]}
+    tag_ids = []
+    applied_names = []
+    unknown_names = []
+    seen_ids = set()
+    for raw_name in tag_names:
+        key = raw_name.lower().strip()
+        if not key:
+            continue
+        if key in name_to_row:
+            tid, canonical = name_to_row[key]
+            if tid not in seen_ids:
+                tag_ids.append(tid)
+                applied_names.append(canonical)
+                seen_ids.add(tid)
+        else:
+            unknown_names.append(raw_name)
+    return tag_ids, applied_names, unknown_names
 
 def scan_and_add_new_files():
     """Scan memes directory and add new files to database"""
@@ -710,7 +835,7 @@ def analyze_meme(file_path, media_type, album_items=None):
                     image_urls.append(item_url)
             
             input_data = {
-                "prompt": USER_PROMPT_ALBUM,
+                "prompt": _build_prompt_with_tag_suggestions(USER_PROMPT_ALBUM),
                 "image_input": image_urls,
                 "system_prompt": SYSTEM_PROMPT,
                 "temperature": 1,
@@ -731,7 +856,7 @@ def analyze_meme(file_path, media_type, album_items=None):
             
             # Use image model with multiple frames
             input_data = {
-                "prompt": USER_PROMPT_GIF,
+                "prompt": _build_prompt_with_tag_suggestions(USER_PROMPT_GIF),
                 "image_input": frame_urls,
                 "system_prompt": SYSTEM_PROMPT,
                 "temperature": 1,
@@ -752,7 +877,7 @@ def analyze_meme(file_path, media_type, album_items=None):
             
             # Use same prompt as GIF (they're both videos)
             input_data = {
-                "prompt": USER_PROMPT_GIF,
+                "prompt": _build_prompt_with_tag_suggestions(USER_PROMPT_GIF),
                 "image_input": frame_urls,
                 "system_prompt": SYSTEM_PROMPT,
                 "temperature": 1,
@@ -766,7 +891,7 @@ def analyze_meme(file_path, media_type, album_items=None):
         else:
             # Use image model for static images
             input_data = {
-                "prompt": USER_PROMPT_IMAGE,
+                "prompt": _build_prompt_with_tag_suggestions(USER_PROMPT_IMAGE),
                 "image_input": [media_url],
                 "system_prompt": SYSTEM_PROMPT,
                 "temperature": 1,
@@ -865,6 +990,42 @@ def process_meme(meme_id, file_path, media_type):
             meme_id
         ))
         
+        # Commit the primary update before separate tag writes to avoid SQLite write-lock conflicts
+        conn.commit()
+
+        # Handle AI-suggested tags
+        suggested_value = data.get('tags')
+        suggested_names = _parse_ai_suggested_tag_names(suggested_value)
+        if suggested_names:
+            print(f"🤖 Suggested tags: {', '.join(suggested_names)}")
+            tag_ids, applied_names, unknown_names = _map_tag_names_to_ids(suggested_names)
+            if applied_names:
+                print(f"🏷️ Applying tags: {', '.join(applied_names)}")
+                apply_tags_to_meme(meme_id, tag_ids)
+            if unknown_names:
+                print(f"⚠️ Ignored unknown/unavailable tags: {', '.join(unknown_names)}")
+
+        # Also apply filename-derived tags for this single meme processing
+        filename_tag_ids = parse_tags_from_filename(file_path)
+        if filename_tag_ids:
+            # Get names for log
+            try:
+                conn_tags = get_db_connection()
+                cur_tags = conn_tags.cursor()
+                placeholders = ",".join(["?"] * len(filename_tag_ids))
+                cur_tags.execute(
+                    f"SELECT name FROM tags WHERE id IN ({placeholders})",
+                    tuple(filename_tag_ids)
+                )
+                names = [row[0] for row in cur_tags.fetchall()]
+                conn_tags.close()
+            except Exception:
+                names = []
+            if names:
+                print(f"📄 Filename tags: {', '.join(names)}")
+            apply_tags_to_meme(meme_id, filename_tag_ids)
+
+        # Final commit (noop if nothing changed)
         conn.commit()
         print(f"✅ Success: {display_name}")
         return True

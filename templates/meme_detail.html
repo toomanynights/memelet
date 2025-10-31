@@ -243,6 +243,22 @@
                         el.style.height = Math.max(el.scrollHeight, 100) + 'px';
                     }
                 }
+                // Update tag checkboxes to reflect current DB state
+                if (Array.isArray(m.tag_ids)){
+                    const set = new Set(m.tag_ids.map(v => parseInt(v, 10)));
+                    const boxes = document.querySelectorAll('.tag-selector input[type="checkbox"]');
+                    boxes.forEach(cb => {
+                        const tagId = parseInt(cb.value, 10);
+                        const should = set.has(tagId);
+                        if (cb.checked !== should){
+                            cb.checked = should;
+                        }
+                        const wrap = cb.parentElement;
+                        if (wrap){
+                            wrap.classList.toggle('selected', should);
+                        }
+                    });
+                }
             }
             const tick = () => {
                 fetch(`/api/memes/${id}?t=${Date.now()}` , { cache: 'no-store' })
