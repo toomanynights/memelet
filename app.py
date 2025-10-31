@@ -2,7 +2,7 @@
 """
 Memelet Web Interface
 """
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from uuid import uuid4
 import sqlite3
 from pathlib import Path
@@ -11,6 +11,10 @@ app = Flask(__name__)
 
 DB_PATH = "memelet.db"
 MEMES_URL_BASE = "https://memes.tmn.name/files/"
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(app.static_folder, 'favicon.ico', mimetype='image/x-icon')
 
 def get_db_connection():
     """Get database connection"""
