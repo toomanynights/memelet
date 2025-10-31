@@ -31,7 +31,7 @@
             {% if tags %}
                 {% for tag in tags %}
                 <div class="tag-item">
-                    <div class="tag-color" style="background-color: {{ tag.color }}"></div>
+                    <div class="tag-color" data-color="{{ tag.color }}"></div>
                     <div class="tag-info">
                         <div class="tag-name">{{ tag.name }}</div>
                         {% if tag.description %}
@@ -48,8 +48,15 @@
                         </div>
                     </div>
                     <div class="tag-actions">
-                        <button class="btn-small btn-edit" onclick='editTag({{ tag.id }}, {{ tag|tojson }})'>Edit</button>
-                        <button class="btn-small btn-delete" onclick="deleteTag({{ tag.id }}, '{{ tag.name }}')">Delete</button>
+                        <button class="btn-small btn-edit"
+                                onclick="editTagFromEl(this)"
+                                data-id="{{ tag.id }}"
+                                data-name="{{ tag.name }}"
+                                data-description="{{ tag.description }}"
+                                data-color="{{ tag.color }}"
+                                data-parse="{{ 1 if tag.parse_from_filename else 0 }}"
+                                data-ai="{{ 1 if tag.ai_can_suggest else 0 }}">Edit</button>
+                        <button class="btn-small btn-delete" onclick="deleteTagFromEl(this)" data-id="{{ tag.id }}" data-name="{{ tag.name }}">Delete</button>
                     </div>
                 </div>
                 {% endfor %}
@@ -118,6 +125,12 @@
         ];
         
         let selectedColor = COLORS[0];
+        function autoResize(el){
+            if (!el) return;
+            el.style.height = 'auto';
+            el.style.overflow = 'hidden';
+            el.style.height = Math.max(el.scrollHeight, 80) + 'px';
+        }
         
         // Initialize color picker
         function initColorPicker() {
@@ -127,6 +140,7 @@
                 const option = document.createElement('div');
                 option.className = 'color-option';
                 option.style.backgroundColor = color;
+                option.setAttribute('data-color', color);
                 option.onclick = () => selectColor(color);
                 picker.appendChild(option);
             });
@@ -135,10 +149,13 @@
         
         function selectColor(color) {
             selectedColor = color;
-            document.querySelectorAll('.color-option').forEach(opt => {
-                opt.classList.remove('selected');
-                if (opt.style.backgroundColor === color) {
+            const options = document.querySelectorAll('.color-option');
+            options.forEach(opt => {
+                const c = opt.getAttribute('data-color');
+                if (c === color) {
                     opt.classList.add('selected');
+                } else {
+                    opt.classList.remove('selected');
                 }
             });
         }
@@ -149,7 +166,21 @@
             document.getElementById('tagId').value = '';
             selectedColor = COLORS[0];
             initColorPicker();
-            document.getElementById('tagModal').classList.add('active');
+            const modal = document.getElementById('tagModal');
+            modal.classList.add('active');
+            // Ensure modal scrolled to top on open
+            modal.scrollTop = 0;
+            const mc1 = modal.querySelector('.modal-content');
+            if (mc1) mc1.scrollTop = 0;
+            const desc = document.getElementById('tagDescription');
+            autoResize(desc);
+            // Ensure correct size after modal layout
+            requestAnimationFrame(() => {
+                autoResize(desc);
+                modal.scrollTop = 0;
+                const mc2 = modal.querySelector('.modal-content');
+                if (mc2) mc2.scrollTop = 0;
+            });
         }
         
         function editTag(id, tag) {
@@ -161,7 +192,33 @@
             document.getElementById('aiSuggest').checked = tag.ai_can_suggest;
             selectedColor = tag.color;
             initColorPicker();
-            document.getElementById('tagModal').classList.add('active');
+            const modal = document.getElementById('tagModal');
+            modal.classList.add('active');
+            // Ensure modal scrolled to top on open
+            modal.scrollTop = 0;
+            const mc1 = modal.querySelector('.modal-content');
+            if (mc1) mc1.scrollTop = 0;
+            const desc = document.getElementById('tagDescription');
+            autoResize(desc);
+            // Ensure correct size after modal layout
+            requestAnimationFrame(() => {
+                autoResize(desc);
+                modal.scrollTop = 0;
+                const mc2 = modal.querySelector('.modal-content');
+                if (mc2) mc2.scrollTop = 0;
+            });
+        }
+
+        function editTagFromEl(btn){
+            const id = parseInt(btn.getAttribute('data-id'), 10);
+            const tag = {
+                name: btn.getAttribute('data-name') || '',
+                description: btn.getAttribute('data-description') || '',
+                color: btn.getAttribute('data-color') || COLORS[0],
+                parse_from_filename: btn.getAttribute('data-parse') === '1',
+                ai_can_suggest: btn.getAttribute('data-ai') === '1'
+            };
+            editTag(id, tag);
         }
         
         function closeModal() {
@@ -169,7 +226,7 @@
         }
         
         function deleteTag(id, name) {
-            if (!confirm(`Delete tag "${name}"? This will remove it from all memes.`)) return;
+            if (!confirm('Delete tag "' + name + '"? This will remove it from all memes.')) return;
             
             fetch(`/api/tags/${id}`, {
                 method: 'DELETE'
@@ -182,6 +239,12 @@
                     alert('Error deleting tag');
                 }
             });
+        }
+
+        function deleteTagFromEl(btn){
+            const id = parseInt(btn.getAttribute('data-id'), 10);
+            const name = btn.getAttribute('data-name') || '';
+            deleteTag(id, name);
         }
         
         document.getElementById('tagForm').onsubmit = function(e) {
@@ -215,6 +278,18 @@
         };
         
         initColorPicker();
+        // Apply colors to list swatches from data-color and enable textarea auto-resize
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.tag-color').forEach(el => {
+                const c = el.getAttribute('data-color');
+                if (c) el.style.backgroundColor = c;
+            });
+            const desc = document.getElementById('tagDescription');
+            if (desc){
+                autoResize(desc);
+                desc.addEventListener('input', () => autoResize(desc));
+            }
+        });
     </script>
 </body>
 </html>
