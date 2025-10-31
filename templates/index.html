@@ -138,6 +138,10 @@
         <div class="bulk-actions" id="bulkActions">
             <button class="bulk-btn bulk-btn-select" onclick="toggleSelectAll()">☑️ Select All</button>
             <button class="bulk-btn bulk-btn-tags" onclick="openTagModal()">🏷️ Manage Tags</button>
+            <div class="bulk-btn-group">
+                <button class="bulk-btn" onclick="bulkScanTags()">🔎 Scan Tags</button>
+                <span id="scanTagsStatus" class="bulk-btn-status"></span>
+            </div>
             <button class="bulk-btn bulk-btn-delete" onclick="bulkDelete()">🗑️ Delete Selected</button>
             <button class="bulk-btn bulk-btn-cancel" onclick="cancelBulkSelect()">Cancel</button>
         </div>
@@ -486,6 +490,144 @@
                 }
             })
             .catch(error => alert('Error: ' + error));
+        }
+        // Build a tag map from the server-provided all_tags
+        const ALL_TAGS = {{ all_tags|tojson }};
+        const TAG_BY_ID = Object.fromEntries((ALL_TAGS || []).map(t => [String(t.id), t]));
+
+        function bulkScanTags() {
+            const selected = Array.from(document.querySelectorAll('.meme-checkbox:checked'))
+                .map(cb => parseInt(cb.dataset.id));
+            const statusEl = document.getElementById('scanTagsStatus');
+            if (selected.length === 0) {
+                alert('Please select at least one meme');
+                return;
+            }
+            let total = selected.length;
+            let completed = 0;
+            let applied = 0;
+            statusEl.textContent = 'Started';
+            const update = () => {
+                if (completed < total) {
+                    statusEl.textContent = `Processing… (${completed}/${total})`;
+                } else {
+                    statusEl.textContent = applied > 0 ? 'Completed' : 'No changes';
+                }
+            };
+            const onDone = (didApply) => {
+                completed += 1;
+                if (didApply) applied += 1;
+                update();
+            };
+            update();
+            // Fire per-meme jobs in foreground and poll each
+            selected.forEach(id => startTagScanJobForCard(id, onDone));
+        }
+
+        function startTagScanJobForCard(memeId, onDone){
+            fetch(`/api/memes/${memeId}/scan-tags`, {
+                method: 'POST',
+                headers: { 'Accept': 'application/json' }
+            })
+            .then(r => r.json().catch(() => ({})).then(j => ({ ok: r.ok, body: j })))
+            .then(({ ok, body }) => {
+                if (!ok || !body.success) {
+                    throw new Error((body && (body.error || body.message)) || 'Request failed');
+                }
+                if (body.job_id){
+                    pollTagScanJobForCard(memeId, body.job_id, onDone);
+                } else {
+                    // Fallback: just refresh this card once after delay
+                    setTimeout(() => {
+                        refreshCardTags(memeId);
+                        if (typeof onDone === 'function') onDone(false);
+                    }, 1500);
+                }
+            })
+            .catch(err => {
+                console.error('Error starting scan:', err);
+                if (typeof onDone === 'function') onDone(false);
+            });
+        }
+
+        function pollTagScanJobForCard(memeId, jobId, onDone){
+            let ticks = 0;
+            const maxTicks = 120;
+            const tick = () => {
+                fetch(`/api/jobs/${jobId}/status?t=${Date.now()}`, { cache: 'no-store' })
+                  .then(r => r.json())
+                  .then(data => {
+                      if (!data || !data.success) throw new Error('Status fetch failed');
+                      if (data.status === 'completed') {
+                          refreshCardTags(memeId);
+                          if (typeof onDone === 'function') onDone(Boolean(data.applied));
+                          return;
+                      }
+                      ticks++;
+                      if (ticks < maxTicks) {
+                          setTimeout(tick, 1000);
+                      }
+                  })
+                  .catch(() => {
+                      ticks++;
+                      if (ticks < maxTicks){
+                          setTimeout(tick, 1000);
+                      } else {
+                          if (typeof onDone === 'function') onDone(false);
+                      }
+                  });
+            };
+            tick();
+        }
+
+        function refreshCardTags(memeId){
+            fetch(`/api/memes/${memeId}?t=${Date.now()}`, { cache: 'no-store' })
+              .then(r => r.json())
+              .then(data => {
+                  if (!data || !data.success || !data.meme) return;
+                  const ids = Array.isArray(data.meme.tag_ids) ? data.meme.tag_ids : [];
+                  applyCardTagList(memeId, ids);
+              })
+              .catch(() => {});
+        }
+
+        function applyCardTagList(memeId, tagIds){
+            const wrap = document.querySelector(`.meme-card-wrapper input.meme-checkbox[data-id="${memeId}"]`);
+            if (!wrap) return;
+            const card = wrap.closest('.meme-card-wrapper');
+            if (!card) return;
+            const content = card.querySelector('.meme-content');
+            if (!content) return;
+            let tagsEl = content.querySelector('.meme-tags');
+            if (!tagsEl){
+                tagsEl = document.createElement('div');
+                tagsEl.className = 'meme-tags';
+                content.appendChild(tagsEl);
+            }
+            // Build tag badge HTML
+            const mapped = tagIds
+                .map(id => TAG_BY_ID[String(id)])
+                .filter(Boolean)
+                .sort((a, b) => a.name.localeCompare(b.name));
+            const first = mapped.slice(0, 3);
+            const rest = mapped.slice(3);
+            const frag = document.createDocumentFragment();
+            // Clear existing
+            tagsEl.innerHTML = '';
+            first.forEach(t => {
+                const span = document.createElement('span');
+                span.className = 'meme-tag';
+                span.textContent = t.name;
+                span.style.backgroundColor = t.color;
+                tagsEl.appendChild(span);
+            });
+            if (rest.length > 0){
+                const more = document.createElement('span');
+                more.className = 'meme-tag more';
+                more.title = rest.map(t => t.name).join(', ');
+                more.textContent = `+${rest.length}`;
+                tagsEl.appendChild(more);
+            }
         }
     </script>
     <script>

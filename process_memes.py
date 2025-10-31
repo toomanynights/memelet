@@ -52,6 +52,14 @@ USER_PROMPT_ALBUM = (
     'meaning: "Explain what this meme means as a whole, considering the sequence and relationship between images"}'
 )
 
+# Prompt base for tags-from-text only (no images). The actual runnable prompt
+# will be augmented with an allowed tag list via _build_prompt_with_tag_suggestions.
+USER_PROMPT_TAGS_FROM_TEXT = (
+    'You will be provided with textual information about a meme (such as title, caption, description, meaning, references, template). '
+    'Based ONLY on this text, return JSON with the following structure: '
+    '{tags: "Use ONLY the tags from the provided list below. Provide a comma-separated list of tags that fit. Do NOT invent new tags. If none fit, omit this property."}'
+)
+
 def _normalize_for_db(value):
     """Convert AI response values to plain strings acceptable by SQLite."""
     if value is None:
@@ -197,6 +205,134 @@ def apply_tags_to_meme(meme_id, tag_ids):
     
     conn.commit()
     conn.close()
+
+def _get_meme_text_blob(meme_id: int) -> str:
+    """Collect text fields for a meme and return a consolidated text blob.
+
+    Includes: title, caption, description, meaning, template, ref_content.
+    Missing fields are skipped. Each field is labeled to aid the model.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT title, caption, description, meaning, template, ref_content
+        FROM memes WHERE id = ?
+        """,
+        (meme_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return ""
+    keys = ["Title", "Caption", "Description", "Meaning", "Template", "References"]
+    parts = []
+    for label, value in zip(keys, row):
+        if value is not None and str(value).strip():
+            parts.append(f"{label}: {str(value).strip()}")
+    return "\n".join(parts)
+
+def ai_suggest_and_apply_tags_from_text(meme_id: int):
+    """Use AI to suggest tags based on meme's text fields only and apply them.
+
+    Returns a tuple (applied_tag_names, unknown_names) for logging purposes.
+    """
+    text_blob = _get_meme_text_blob(meme_id)
+    if not text_blob:
+        print(f"  ⚠️ No text content available for meme id={meme_id}; skipping AI tag suggestion")
+        return [], []
+
+    prompt = _build_prompt_with_tag_suggestions(USER_PROMPT_TAGS_FROM_TEXT)
+    # Provide the textual content explicitly at the end of the prompt
+    full_prompt = prompt + "\n\nTEXT INFORMATION:\n" + text_blob
+
+    try:
+        input_data = {
+            "prompt": full_prompt,
+            "system_prompt": SYSTEM_PROMPT,
+            "temperature": 1,
+            "top_p": 1,
+            "max_completion_tokens": 512,
+        }
+        print("  → Requesting AI tag suggestions from text only")
+        output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+        if isinstance(output, list):
+            output = "".join(output).strip()
+        result_clean = str(output).strip()
+        if result_clean.startswith("```json"):
+            result_clean = result_clean[7:]
+        elif result_clean.startswith("```"):
+            result_clean = result_clean[3:]
+        if result_clean.endswith("```"):
+            result_clean = result_clean[:-3]
+        result_clean = result_clean.strip()
+
+        data = json.loads(result_clean)
+        suggested_value = data.get("tags")
+        suggested_names = _parse_ai_suggested_tag_names(suggested_value)
+        if not suggested_names:
+            print("  ℹ️ AI returned no usable tags from text")
+            return [], []
+        tag_ids, applied_names, unknown_names = _map_tag_names_to_ids(suggested_names)
+        if applied_names:
+            apply_tags_to_meme(meme_id, tag_ids)
+        if applied_names:
+            print(f"  🏷️ Applied AI tags from text: {', '.join(applied_names)}")
+        if unknown_names:
+            print(f"  ⚠️ Ignored unknown/unavailable tags: {', '.join(unknown_names)}")
+        return applied_names, unknown_names
+    except Exception as e:
+        print(f"  ✗ AI tags-from-text failed: {e}")
+        return [], []
+
+def scan_tags_for_memes(meme_ids=None, run_path_parse=True, run_ai_text=True, job_id=None):
+    """Scan and apply tags for given memes using path parsing and AI-from-text.
+
+    If meme_ids is None, operates on all memes.
+    This function does NOT modify meme status or other descriptive fields.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    if meme_ids is None:
+        cur.execute("SELECT id, file_path FROM memes ORDER BY id")
+        rows = cur.fetchall()
+    else:
+        placeholders = ",".join(["?"] * len(meme_ids))
+        cur.execute(f"SELECT id, file_path FROM memes WHERE id IN ({placeholders}) ORDER BY id", tuple(meme_ids))
+        rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        print("✨ No memes to tag-scan")
+        return
+
+    print(f"📋 Tag scan: {len(rows)} meme(s) | path_parse={run_path_parse} ai_text={run_ai_text}")
+    total_applied = 0
+    single = len(rows) == 1
+    for meme_id, file_path in rows:
+        print(f"\n🔎 Meme id={meme_id}")
+        applied_any = False
+        if run_path_parse:
+            try:
+                t_ids = parse_tags_from_filename(file_path)
+                if t_ids:
+                    apply_tags_to_meme(meme_id, t_ids)
+                    total_applied += len(t_ids)
+                    print(f"  ✓ Path tags applied: {len(t_ids)}")
+                    applied_any = True
+                else:
+                    print("  ℹ️ No path-derived tags")
+            except Exception as e:
+                print(f"  ✗ Path tag parse failed: {e}")
+        if run_ai_text:
+            ai_applied, _ = ai_suggest_and_apply_tags_from_text(meme_id)
+            if ai_applied:
+                applied_any = True
+            total_applied += len(ai_applied)
+        # If this was triggered for a single meme and job_id is provided, emit a completion marker
+        if single and job_id:
+            print(f"TAGSCAN JOB {job_id} COMPLETE id={meme_id} applied={'true' if applied_any else 'false'}")
+    print(f"\n✅ Tag scan complete. Total tags applied: {total_applied}")
 
 def _ensure_schema_migrations():
     """Ensure runtime DB has columns needed by this script (idempotent)."""
@@ -1188,6 +1324,27 @@ def main():
         action='store_true',
         help='Show database statistics'
     )
+    # Tags-only scan controls
+    parser.add_argument(
+        '--scan-tags-all',
+        action='store_true',
+        help='Scan and apply tags (path + AI-from-text) for all memes'
+    )
+    parser.add_argument(
+        '--scan-tags-one',
+        type=int,
+        help='Scan and apply tags (path + AI-from-text) for a single meme id'
+    )
+    parser.add_argument(
+        '--scan-tags-ids',
+        type=str,
+        help='Comma-separated list of meme IDs to tag-scan (path + AI-from-text)'
+    )
+    parser.add_argument(
+        '--job-id',
+        type=str,
+        help='Optional job id for tag-scan log correlation'
+    )
     
     args = parser.parse_args()
     
@@ -1202,6 +1359,36 @@ def main():
         return
     
     # Execute requested actions
+    if args.scan_tags_one is not None:
+        mid = int(args.scan_tags_one)
+        print("================================")
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting tags-only scan (id={mid})")
+        print("================================")
+        scan_tags_for_memes([mid], run_path_parse=True, run_ai_text=True, job_id=args.job_id)
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Tags-only scan complete (id={mid})\n")
+        return
+    if args.scan_tags_ids:
+        try:
+            ids = [int(x.strip()) for x in args.scan_tags_ids.split(',') if x.strip()]
+        except Exception:
+            print("❌ Invalid --scan-tags-ids value; expected comma-separated integers")
+            return
+        if not ids:
+            print("✨ No IDs provided for --scan-tags-ids")
+            return
+        print("================================")
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting tags-only scan (ids={ids})")
+        print("================================")
+        scan_tags_for_memes(ids, run_path_parse=True, run_ai_text=True)
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Tags-only scan complete (ids={ids})\n")
+        return
+    if args.scan_tags_all:
+        print("================================")
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting tags-only scan for ALL memes")
+        print("================================")
+        scan_tags_for_memes(None, run_path_parse=True, run_ai_text=True)
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Tags-only scan complete (all)\n")
+        return
     if args.process_one is not None:
         meme_id = int(args.process_one)
         conn = get_db_connection()
@@ -1214,10 +1401,10 @@ def main():
             return
         _id, file_path, media_type = row
         print("================================")
-        print(f"{datetime.now()}: Starting single meme processing (id={meme_id})")
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting single meme processing (id={meme_id})")
         print("================================")
         ok = process_meme(_id, file_path, media_type)
-        print(f"{datetime.now()}: Single meme processing {'succeeded' if ok else 'failed'} (id={meme_id})")
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Single meme processing {'succeeded' if ok else 'failed'} (id={meme_id})")
         print("")
         return
     if args.stats:

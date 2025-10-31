@@ -82,6 +82,8 @@
                 <div style="margin-top: 15px; display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
                     <button type="button" class="btn btn-warning" onclick="processThisMeme()">Analyze This Meme</button>
                     <span id="processStatus" data-initial-updated-at="{{ meme.updated_at or '' }}" style="color:#718096; font-size:0.9rem;"></span>
+                    <button type="button" class="btn" onclick="scanTagsThisMeme()">🔎 Scan Tags</button>
+                    <span id="tagScanStatus" data-initial-updated-at="{{ meme.updated_at or '' }}" style="color:#718096; font-size:0.9rem;"></span>
                 </div>
             </div>
             
@@ -213,6 +215,166 @@
             .catch(err => {
                 statusEl.textContent = 'Error: ' + err.message;
             });
+        }
+
+        function scanTagsThisMeme() {
+            const statusEl = document.getElementById('tagScanStatus');
+            statusEl.textContent = 'Starting…';
+            const baseline = getCurrentTagSet();
+            fetch('/api/memes/{{ meme.id }}/scan-tags', {
+                method: 'POST',
+                headers: { 'Accept': 'application/json' }
+            })
+            .then(r => r.json().catch(() => ({})).then(j => ({ ok: r.ok, body: j })))
+            .then(({ ok, body }) => {
+                if (!ok || !body.success) {
+                    throw new Error((body && (body.error || body.message)) || 'Request failed');
+                }
+                statusEl.textContent = 'Started';
+                if (body.job_id) {
+                    pollTagScanJob(body.job_id, baseline);
+                } else {
+                    // Fallback if job_id isn't returned for some reason
+                    startTagScanPolling(baseline);
+                }
+            })
+            .catch(err => {
+                statusEl.textContent = 'Error: ' + err.message;
+            });
+        }
+
+        function pollTagScanJob(jobId, baselineSet){
+            const statusEl = document.getElementById('tagScanStatus');
+            let ticks = 0;
+            const maxTicks = 120; // ~2 minutes
+            const id = {{ meme.id }};
+            function finish(applied){
+                fetch(`/api/memes/${id}?t=${Date.now()}`, { cache: 'no-store' })
+                  .then(r => r.json())
+                  .then(data => {
+                      if (data && data.success && data.meme && Array.isArray(data.meme.tag_ids)){
+                          const set = new Set(data.meme.tag_ids.map(v => parseInt(v, 10)));
+                          applyTagSet(set);
+                      }
+                  })
+                  .finally(() => {
+                      statusEl.textContent = applied ? 'Completed' : 'No changes';
+                  });
+            }
+            function tick(){
+                fetch(`/api/jobs/${jobId}/status?t=${Date.now()}`, { cache: 'no-store' })
+                  .then(r => r.json())
+                  .then(data => {
+                      if (!data || !data.success) throw new Error('Status fetch failed');
+                      if (data.status === 'completed') {
+                          finish(Boolean(data.applied));
+                          return;
+                      }
+                      // Early exit if tags already changed
+                      fetch(`/api/memes/${id}?t=${Date.now()}`, { cache: 'no-store' })
+                        .then(r => r.json())
+                        .then(m => {
+                            if (m && m.success && m.meme && Array.isArray(m.meme.tag_ids)){
+                                const newSet = new Set(m.meme.tag_ids.map(v => parseInt(v, 10)));
+                                let changed = newSet.size !== baselineSet.size;
+                                if (!changed){
+                                    for (const v of newSet){ if (!baselineSet.has(v)) { changed = true; break; } }
+                                }
+                                if (changed){
+                                    applyTagSet(newSet);
+                                    statusEl.textContent = 'Completed';
+                                    return;
+                                }
+                            }
+                            ticks++;
+                            if (ticks >= maxTicks){
+                                statusEl.textContent = 'No changes';
+                            } else {
+                                statusEl.textContent = 'Processing…';
+                                setTimeout(tick, 1000);
+                            }
+                        });
+                  })
+                  .catch(() => {
+                      ticks++;
+                      if (ticks >= maxTicks){
+                          statusEl.textContent = 'No changes';
+                      } else {
+                          statusEl.textContent = 'Processing…';
+                          setTimeout(tick, 1000);
+                      }
+                  });
+            }
+            tick();
+        }
+
+        function getCurrentTagSet(){
+            const boxes = document.querySelectorAll('.tag-selector input[type="checkbox"]');
+            const set = new Set();
+            boxes.forEach(cb => { if (cb.checked) set.add(parseInt(cb.value, 10)); });
+            return set;
+        }
+
+        function applyTagSet(newSet){
+            const boxes = document.querySelectorAll('.tag-selector input[type="checkbox"]');
+            boxes.forEach(cb => {
+                const tagId = parseInt(cb.value, 10);
+                const should = newSet.has(tagId);
+                if (cb.checked !== should){
+                    cb.checked = should;
+                }
+                const wrap = cb.parentElement;
+                if (wrap){
+                    wrap.classList.toggle('selected', should);
+                }
+            });
+        }
+
+        let tagPollTimer = null;
+        function startTagScanPolling(baselineSet){
+            if (tagPollTimer) clearInterval(tagPollTimer);
+            const statusEl = document.getElementById('tagScanStatus');
+            const id = {{ meme.id }};
+            const baselineUpdatedAt = statusEl.getAttribute('data-initial-updated-at') || '';
+            let ticks = 0;
+            const maxTicks = 120; // ~2 minutes
+            const tick = () => {
+                fetch(`/api/memes/${id}?t=${Date.now()}` , { cache: 'no-store' })
+                  .then(r => r.json())
+                  .then(data => {
+                      if (!data || !data.success) throw new Error('Status fetch failed');
+                      const m = data.meme;
+                      const newSet = new Set((m.tag_ids || []).map(v => parseInt(v, 10)));
+                      const updatedAt = (m.updated_at || '');
+                      // Compare sets (size or membership differences)
+                      let changed = newSet.size !== baselineSet.size;
+                      if (!changed){
+                          for (const v of newSet){ if (!baselineSet.has(v)) { changed = true; break; } }
+                      }
+                      if (changed || (updatedAt && updatedAt !== baselineUpdatedAt)){
+                          applyTagSet(newSet);
+                          statusEl.textContent = 'Completed';
+                          clearInterval(tagPollTimer);
+                          tagPollTimer = null;
+                      } else {
+                          ticks++;
+                          if (ticks >= maxTicks){
+                              statusEl.textContent = 'No changes';
+                              clearInterval(tagPollTimer);
+                              tagPollTimer = null;
+                          } else {
+                              statusEl.textContent = 'Processing…';
+                          }
+                      }
+                  })
+                  .catch((e) => {
+                      clearInterval(tagPollTimer);
+                      tagPollTimer = null;
+                      statusEl.textContent = 'Error: ' + (e && e.message ? e.message : 'Polling failed');
+                  });
+            };
+            tick();
+            tagPollTimer = setInterval(tick, 1000);
         }
 
         let pollTimer = null;

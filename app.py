@@ -3,6 +3,7 @@
 Memelet Web Interface
 """
 from flask import Flask, render_template, request, jsonify
+from uuid import uuid4
 import sqlite3
 from pathlib import Path
 
@@ -840,7 +841,131 @@ def trigger_action():
         )
         return {'success': True, 'message': 'Error reprocessing started in background!'}
     
+    elif action == 'scan_tags_all':
+        # Run tags-only scan for all memes using process_memes.py
+        import os
+        from datetime import datetime
+        script_dir = "/home/basil/memes"
+        venv_python = f"{script_dir}/venv/bin/python"
+        script_path = f"{script_dir}/process_memes.py"
+        log_file = f"{script_dir}/logs/scan.log"
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        try:
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(log_file, 'a', encoding='utf-8') as lf:
+                lf.write("================================\n")
+                lf.write(f"{ts}: Triggered tags-only scan for ALL memes via UI\n")
+                lf.write("================================\n")
+                python_exec = venv_python if os.path.exists(venv_python) else "python3"
+                subprocess.Popen(
+                    [python_exec, script_path, '--scan-tags-all'],
+                    cwd=script_dir,
+                    stdout=lf,
+                    stderr=lf,
+                    start_new_session=True
+                )
+            return {'success': True, 'message': 'Tags-only scan started in background!'}
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
+    
     return {'success': False, 'message': 'Invalid action'}
+
+@app.route('/api/memes/<int:meme_id>/scan-tags', methods=['POST'])
+def scan_tags_single_meme(meme_id: int):
+    """Trigger a tags-only scan for a single meme (path + AI-from-text)."""
+    import subprocess, os
+    from datetime import datetime
+
+    script_dir = "/home/basil/memes"
+    venv_python = f"{script_dir}/venv/bin/python"
+    script_path = f"{script_dir}/process_memes.py"
+    log_file = f"{script_dir}/logs/scan.log"
+
+    # Ensure logs directory exists
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+    # Log header
+    try:
+        job_id = str(uuid4())
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_file, 'a', encoding='utf-8') as lf:
+            lf.write("================================\n")
+            lf.write(f"{ts}: TAGSCAN JOB {job_id} START id={meme_id}\n")
+            lf.write("================================\n")
+            python_exec = venv_python if os.path.exists(venv_python) else "python3"
+            subprocess.Popen(
+                [python_exec, script_path, '--scan-tags-one', str(meme_id), '--job-id', job_id],
+                cwd=script_dir,
+                stdout=lf,
+                stderr=lf,
+                start_new_session=True
+            )
+        return {'success': True, 'message': 'Tag scan started', 'job_id': job_id}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}, 500
+
+@app.route('/api/bulk-scan-tags', methods=['POST'])
+def bulk_scan_tags():
+    """Trigger tags-only scan for a set of selected meme IDs."""
+    import subprocess, os
+    from datetime import datetime
+    data = request.get_json(silent=True) or {}
+    meme_ids = data.get('meme_ids', [])
+    if not meme_ids:
+        return {'success': False, 'error': 'No meme IDs provided'}
+    # Build comma-separated string of IDs
+    try:
+        id_list = [str(int(i)) for i in meme_ids]
+    except Exception:
+        return {'success': False, 'error': 'Invalid meme IDs'}, 400
+
+    ids_str = ",".join(id_list)
+
+    script_dir = "/home/basil/memes"
+    venv_python = f"{script_dir}/venv/bin/python"
+    script_path = f"{script_dir}/process_memes.py"
+    log_file = f"{script_dir}/logs/scan.log"
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    try:
+        with open(log_file, 'a', encoding='utf-8') as lf:
+            lf.write("================================\n")
+            lf.write(f"{datetime.now()}: Triggered tags-only scan via UI (ids={ids_str})\n")
+            lf.write("================================\n")
+            python_exec = venv_python if os.path.exists(venv_python) else "python3"
+            subprocess.Popen(
+                [python_exec, script_path, '--scan-tags-ids', ids_str],
+                cwd=script_dir,
+                stdout=lf,
+                stderr=lf,
+                start_new_session=True
+            )
+        return {'success': True}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}, 500
+
+@app.route('/api/jobs/<job_id>/status', methods=['GET'])
+def job_status(job_id: str):
+    """Return scan-tag job status by scanning the log for the COMPLETE marker."""
+    import os, re
+    log_file = "/home/basil/memes/logs/scan.log"
+    if not os.path.exists(log_file):
+        return {'success': True, 'status': 'pending'}
+
+    try:
+        with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+
+        # Example complete line: TAGSCAN JOB <job_id> COMPLETE id=123 applied=true
+        pattern = rf"TAGSCAN JOB {re.escape(job_id)} COMPLETE .*?applied=(true|false)"
+        m = re.search(pattern, content)
+        if m:
+            applied = (m.group(1).lower() == 'true')
+            return {'success': True, 'status': 'completed', 'applied': applied}
+        if f"TAGSCAN JOB {job_id} START" in content:
+            return {'success': True, 'status': 'pending'}
+        return {'success': True, 'status': 'pending'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}, 500
 
 @app.route('/api/memes/<int:meme_id>/process', methods=['POST'])
 def process_single_meme(meme_id: int):
@@ -878,9 +1003,10 @@ def process_single_meme(meme_id: int):
 
     # Prepend a header line to the log synchronously
     try:
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(log_file, 'a', encoding='utf-8') as lf:
             lf.write("================================\n")
-            lf.write(f"{datetime.now()}: Triggered single meme processing via UI (id={meme_id})\n")
+            lf.write(f"{ts}: Triggered single meme processing via UI (id={meme_id})\n")
             lf.write("================================\n")
     except Exception:
         # Non-fatal

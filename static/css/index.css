@@ -100,12 +100,31 @@ h1 {
 .bulk-actions {
     display: none;
     justify-content: center;
+    align-items: center;
     gap: 10px;
-    margin: 20px 0;
+    margin: 20px 0 44px; /* extra bottom space for absolute status line */
 }
 
 .bulk-actions.visible {
     display: flex;
+}
+
+.bulk-btn-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative; /* allow absolute status without affecting height */
+}
+
+.bulk-btn-status {
+    font-size: 0.9rem;
+    color: #e2e8f0; /* light text on dark header */
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    pointer-events: none;
 }
 
 .bulk-btn {

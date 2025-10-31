@@ -34,6 +34,10 @@
             <button type="button" class="btn btn-warning" id="retry-btn" onclick="triggerAction('retry_errors')">
                 🔄 Reprocess Errors
             </button>
+
+            <button type="button" class="btn" id="scan-tags-btn" onclick="triggerAction('scan_tags_all')">
+                🔎 Scan Tags (All Memes)
+            </button>
         </div>
         
         <div class="section">
@@ -54,11 +58,15 @@
             isProcessing = true;
             document.getElementById('scan-btn').disabled = true;
             document.getElementById('retry-btn').disabled = true;
+            const scanTagsBtn = document.getElementById('scan-tags-btn');
+            if (scanTagsBtn) scanTagsBtn.disabled = true;
             
             if (action === 'scan') {
                 document.getElementById('scan-btn').textContent = '⏳ Processing...';
-            } else {
+            } else if (action === 'retry_errors') {
                 document.getElementById('retry-btn').textContent = '⏳ Processing...';
+            } else if (action === 'scan_tags_all') {
+                if (scanTagsBtn) scanTagsBtn.textContent = '⏳ Processing...';
             }
             
             // Show message
@@ -100,6 +108,11 @@
             document.getElementById('retry-btn').disabled = false;
             document.getElementById('scan-btn').textContent = '🔍 Scan & Process New Memes';
             document.getElementById('retry-btn').textContent = '🔄 Reprocess Errors';
+            const scanTagsBtn = document.getElementById('scan-tags-btn');
+            if (scanTagsBtn) {
+                scanTagsBtn.disabled = false;
+                scanTagsBtn.textContent = '🔎 Scan Tags (All Memes)';
+            }
             
             if (logCheckInterval) {
                 clearInterval(logCheckInterval);
