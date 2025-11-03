@@ -571,5 +571,12 @@
             });
         }
     </script>
+    <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
+    <script type="text/javascript">
+    clippy.load('Clippy', function(agent) {
+        agent.show();
+    });
+    </script>
 </body>
 </html>

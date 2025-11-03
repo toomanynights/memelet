@@ -258,3 +258,7 @@ select {
     color: #2d3748;
 }
 
+.clippy {
+    /* Subtle white glow so agent doesn't blend into background */
+    filter: drop-shadow(0 0 6px rgba(255,255,255,0.9)) drop-shadow(0 0 2px rgba(255,255,255,0.6));
+}

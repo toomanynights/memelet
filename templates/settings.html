@@ -6,6 +6,7 @@
     <title>Settings - Memelet</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/build/clippy.css') }}" media="all">
     <style>
         .btn {
             padding: 15px 30px;
@@ -156,6 +157,18 @@
                     .catch(error => console.error('Error refreshing log:', error));
             }
         }, 5000);
+    </script>
+    <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
+    <script type="text/javascript">
+        clippy.load('Clippy', function(agent) {
+            agent.show();
+            try {
+                if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
+                    agent.play('CheckingSomething', 5000);
+                }
+            } catch (e) {}
+        });
     </script>
 </body>
 </html>
