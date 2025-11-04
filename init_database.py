@@ -89,6 +89,19 @@ def init_database():
         CREATE INDEX IF NOT EXISTS idx_meme_tags_tag ON meme_tags(tag_id)
     """)
     
+    # Settings table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    
+    # Initialize default agent_form setting if not set
+    cursor.execute("SELECT value FROM settings WHERE key = 'agent_form'")
+    if cursor.fetchone() is None:
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('agent_form', 'none')")
+    
     conn.commit()
     conn.close()
     
@@ -98,6 +111,7 @@ def init_database():
     print("   - album_items: id, album_id, file_path, display_order, file_size")
     print("   - tags: id, name, description, color, parse_from_filename, ai_can_suggest, created_at")
     print("   - meme_tags: meme_id, tag_id")
+    print("   - settings: key, value")
 
 if __name__ == "__main__":
     init_database()

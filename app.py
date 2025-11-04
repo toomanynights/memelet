@@ -22,6 +22,32 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def get_clippy_agent():
+    """Get current Clippy agent selection from settings"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Ensure settings table exists
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        # Ensure default value exists
+        cursor.execute("SELECT value FROM settings WHERE key = 'agent_form'")
+        row = cursor.fetchone()
+        if not row:
+            cursor.execute("INSERT INTO settings (key, value) VALUES ('agent_form', 'none')")
+            conn.commit()
+            agent_form = 'none'
+        else:
+            agent_form = row[0]
+        conn.close()
+        return agent_form
+    except Exception:
+        return 'none'
+
 @app.route('/')
 def index():
     """Main page showing all memes"""
@@ -242,7 +268,8 @@ def index():
         media_filter=request.args.get('media', ''),
         page=page,
         total_pages=total_pages,
-        show_pagination=total_pages > 1
+        show_pagination=total_pages > 1,
+        clippy_agent=get_clippy_agent()
     )
 
 @app.route('/meme/<int:meme_id>', methods=['GET', 'POST'])
@@ -308,15 +335,6 @@ def meme_detail(meme_id):
         redirect_params = []
         if search_query:
             redirect_params.append(f"search={search_query}")
-        if status_filter:
-            redirect_params.append(f"status={status_filter}")
-        if tag_filter:
-            redirect_params.append(f"tag={tag_filter}")
-        if media_filter:
-            redirect_params.append(f"media={media_filter}")
-        
-        redirect_url = "/?" + "&".join(redirect_params) if redirect_params else "/"
-        return redirect(redirect_url)
         if status_filter:
             redirect_params.append(f"status={status_filter}")
         if tag_filter:
@@ -563,7 +581,7 @@ def meme_detail(meme_id):
     query_string = "&" + "&".join(query_params) if query_params else ""
     
     return render_template('meme_detail.html', meme=meme, album_items=album_items, saved=saved, all_tags=all_tags, current_tags=current_tags,
-                          prev_id=prev_id, next_id=next_id, query_string=query_string)
+                          prev_id=prev_id, next_id=next_id, query_string=query_string, clippy_agent=get_clippy_agent())
 
 @app.route('/api/memes/<int:meme_id>', methods=['DELETE'])
 def delete_meme(meme_id):
@@ -815,7 +833,10 @@ def settings():
     else:
         log_content = "No log file found"
     
-    return render_template('settings.html', log_content=log_content)
+    # Get current agent selection
+    current_agent = get_clippy_agent()
+    
+    return render_template('settings.html', log_content=log_content, current_agent=current_agent)
 
 @app.route('/api/trigger-action', methods=['POST'])
 def trigger_action():
@@ -1105,7 +1126,7 @@ def tags():
     
     conn.close()
     
-    return render_template('tags.html', tags=tags_list)
+    return render_template('tags.html', tags=tags_list, clippy_agent=get_clippy_agent())
 
 @app.route('/api/tags', methods=['POST'])
 def create_tag():
@@ -1173,6 +1194,96 @@ def delete_tag(tag_id):
     conn.close()
     
     return {'success': True}
+
+@app.route('/api/clippy-agents', methods=['GET'])
+def get_clippy_agents():
+    """Get list of available Clippy agents"""
+    agents_dir = Path(app.static_folder) / 'clippy' / 'agents'
+    agents = []
+    
+    if not agents_dir.exists():
+        return jsonify({'success': False, 'error': 'Agents directory not found'})
+    
+    # Scan agent directories
+    for agent_dir in agents_dir.iterdir():
+        if not agent_dir.is_dir():
+            continue
+        
+        agent_name = agent_dir.name
+        agent_js = agent_dir / 'agent.js'
+        
+        # Include agents that have an agent.js file (which means they're valid agents)
+        # The frontend will handle missing preview.png files gracefully
+        if agent_js.exists():
+            agents.append({
+                'name': agent_name
+            })
+    
+    # Sort agents by name
+    agents.sort(key=lambda x: x['name'])
+    
+    return jsonify({'success': True, 'agents': agents})
+
+@app.route('/api/settings/clippy-agent', methods=['GET'])
+def get_clippy_agent_setting():
+    """Get current Clippy agent selection"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Ensure settings table exists
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    
+    cursor.execute("SELECT value FROM settings WHERE key = 'agent_form'")
+    row = cursor.fetchone()
+    if not row:
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('agent_form', 'none')")
+        conn.commit()
+        agent_form = 'none'
+    else:
+        agent_form = row[0]
+    
+    conn.close()
+    
+    return jsonify({'success': True, 'agent_form': agent_form})
+
+@app.route('/api/settings/clippy-agent', methods=['POST'])
+def set_clippy_agent_setting():
+    """Save Clippy agent selection"""
+    data = request.get_json()
+    agent_form = data.get('agent_form', 'none')
+    
+    # Validate agent_form (should be 'none' or a valid agent name)
+    if agent_form != 'none':
+        # Check if agent exists
+        agents_dir = Path(app.static_folder) / 'clippy' / 'agents' / agent_form
+        if not agents_dir.exists():
+            return jsonify({'success': False, 'error': 'Invalid agent name'})
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Ensure settings table exists
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    
+    cursor.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('agent_form', ?)",
+        (agent_form,)
+    )
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'agent_form': agent_form})
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=False)

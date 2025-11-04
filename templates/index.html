@@ -11,7 +11,9 @@
             max-width: 1800px;
         }
     </style>
+    {% if clippy_agent and clippy_agent != 'none' %}
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/build/clippy.css') }}" media="all">
+    {% endif %}
     
 </head>
 <body>
@@ -688,14 +690,15 @@
 <!-- jQuery 1.7+ -->
 <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
 
+{% if clippy_agent and clippy_agent != 'none' %}
 <!-- Clippy.js -->
 <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
 
 <!-- Init script -->
 <script type="text/javascript">
-    clippy.load('Clippy', function(agent) {
+    clippy.load('{{ clippy_agent }}', function(agent) {
         agent.show();
-        agent.speak('If you need help, just ask! Or don’t. I’ll still be here. Watching.');
+        agent.speak('If you need help, just ask! Or don\'t. I\'ll still be here. Watching.');
         try {
             var params = new URLSearchParams(window.location.search || '');
             var q = params.get('search');
@@ -705,6 +708,7 @@
         } catch (e) {}
     });
 </script>
+{% endif %}
 
 </body>
 </html>

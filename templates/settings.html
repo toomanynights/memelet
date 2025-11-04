@@ -48,6 +48,17 @@
             </p>
             <div class="log-container" id="log-content">{{ log_content }}</div>
         </div>
+        
+        <div class="section">
+            <h2>Clippy Agent Appearance</h2>
+            <p class="action-description">
+                Select which assistant agent to display, or choose "None" to disable Clippy
+            </p>
+            <div class="agent-selector" id="agentSelector">
+                <!-- Agent previews will be generated here -->
+            </div>
+            <div id="agent-message" style="margin-top: 15px;"></div>
+        </div>
     </div>
     
     <script>
@@ -158,17 +169,254 @@
             }
         }, 5000);
     </script>
+    
+    <!-- Agent Selector Script -->
+    <script>
+        let currentAgent = '{{ current_agent }}';
+        
+        function createAgentPreview(agent, isNone = false) {
+            const preview = document.createElement('div');
+            preview.className = 'agent-preview';
+            preview.dataset.agent = agent ? agent.name : 'none';
+            
+            if (isNone) {
+                preview.innerHTML = `
+                    <div class="agent-preview-none">
+                        <div class="agent-preview-icon">🚫</div>
+                    </div>
+                    <div class="agent-name">None</div>
+                `;
+            } else {
+                // Create image container (80x80px)
+                const container = document.createElement('div');
+                container.className = 'agent-preview-image-container';
+                
+                const img = document.createElement('img');
+                img.alt = agent.name;
+                
+                // Scale preview image to fit 80px height while maintaining aspect ratio
+                img.onload = function() {
+                    try {
+                        const naturalWidth = img.naturalWidth;
+                        const naturalHeight = img.naturalHeight;
+                        
+                        if (naturalHeight > 0) {
+                            // Calculate scale to fit 80px height
+                            const scale = 80 / naturalHeight;
+                            const scaledWidth = naturalWidth * scale;
+                            
+                            // Set image size
+                            img.style.width = `${scaledWidth}px`;
+                            img.style.height = `${80}px`;
+                        }
+                    } catch (e) {
+                        console.error('Error scaling preview image:', e);
+                    }
+                };
+                
+                img.onerror = function() {
+                    console.error(`Failed to load preview.png for agent: ${agent.name}`);
+                    // Show placeholder or agent name as fallback
+                    img.style.display = 'none';
+                    const placeholder = document.createElement('div');
+                    placeholder.style.width = '80px';
+                    placeholder.style.height = '80px';
+                    placeholder.style.display = 'flex';
+                    placeholder.style.alignItems = 'center';
+                    placeholder.style.justifyContent = 'center';
+                    placeholder.style.background = '#f0f0f0';
+                    placeholder.style.color = '#666';
+                    placeholder.style.fontSize = '0.8rem';
+                    placeholder.textContent = agent.name.substring(0, 4);
+                    container.appendChild(placeholder);
+                };
+                
+                img.src = `/static/clippy/agents/${agent.name}/preview.png`;
+                container.appendChild(img);
+                
+                const name = document.createElement('div');
+                name.className = 'agent-name';
+                name.textContent = agent.name;
+                
+                preview.appendChild(container);
+                preview.appendChild(name);
+            }
+            
+            // Mark as selected if it matches current agent
+            if ((isNone && currentAgent === 'none') || (!isNone && agent.name === currentAgent)) {
+                preview.classList.add('selected');
+            }
+            
+            preview.addEventListener('click', () => selectAgent(isNone ? 'none' : agent.name));
+            
+            return preview;
+        }
+        
+        let currentClippyAgent = null;
+        
+        function selectAgent(agentName) {
+            fetch('/api/settings/clippy-agent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ agent_form: agentName })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    currentAgent = agentName;
+                    
+                    // Update UI
+                    document.querySelectorAll('.agent-preview').forEach(p => {
+                        p.classList.remove('selected');
+                    });
+                    const selected = document.querySelector(`.agent-preview[data-agent="${agentName}"]`);
+                    if (selected) selected.classList.add('selected');
+                    
+                    // Immediately load the selected agent
+                    if (agentName === 'none') {
+                        // Hide current agent if any
+                        if (currentClippyAgent) {
+                            try {
+                                currentClippyAgent.hide(false, function() {
+                                    currentClippyAgent = null;
+                                });
+                            } catch (e) {
+                                currentClippyAgent = null;
+                            }
+                        }
+                    } else {
+                        // Load new agent
+                        if (typeof clippy !== 'undefined') {
+                            // Hide current agent if any, then load new one
+                            if (currentClippyAgent) {
+                                try {
+                                    currentClippyAgent.hide(false, function() {
+                                        // After hide animation completes, load new agent
+                                        clippy.load(agentName, function(agent) {
+                                            currentClippyAgent = agent;
+                                            agent.show();
+                                            try {
+                                                if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
+                                                    agent.play('CheckingSomething', 5000);
+                                                }
+                                            } catch (e) {}
+                                        });
+                                    });
+                                } catch (e) {
+                                    // If hide fails, just load new agent immediately
+                                    clippy.load(agentName, function(agent) {
+                                        currentClippyAgent = agent;
+                                        agent.show();
+                                        try {
+                                            if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
+                                                agent.play('CheckingSomething', 5000);
+                                            }
+                                        } catch (e) {}
+                                    });
+                                }
+                            } else {
+                                // No current agent, load immediately
+                                clippy.load(agentName, function(agent) {
+                                    currentClippyAgent = agent;
+                                    agent.show();
+                                    try {
+                                        if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
+                                            agent.play('CheckingSomething', 5000);
+                                        }
+                                    } catch (e) {}
+                                });
+                            }
+                        }
+                    }
+                    
+                    // Show feedback
+                    const msgEl = document.getElementById('agent-message');
+                    msgEl.innerHTML = `<div class="message success">Agent selection saved${agentName === 'none' ? ' (Clippy disabled)' : ''}!</div>`;
+                    setTimeout(() => msgEl.innerHTML = '', 3000);
+                } else {
+                    alert('Error saving selection: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                alert('Error saving selection: ' + error);
+            });
+        }
+        
+        // Load agents and render selector
+        fetch('/api/clippy-agents')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Agents API response:', data);
+                if (data.success) {
+                    const container = document.getElementById('agentSelector');
+                    if (!container) {
+                        console.error('Agent selector container not found!');
+                        return;
+                    }
+                    
+                    // Add "None" option first
+                    container.appendChild(createAgentPreview(null, true));
+                    
+                    // Add all agents
+                    if (data.agents && Array.isArray(data.agents)) {
+                        console.log(`Loading ${data.agents.length} agents`);
+                        data.agents.forEach(agent => {
+                            if (agent && agent.name) {
+                                container.appendChild(createAgentPreview(agent));
+                            } else {
+                                console.warn('Invalid agent data:', agent);
+                            }
+                        });
+                    } else {
+                        console.warn('No agents array in response:', data);
+                    }
+                } else {
+                    console.error('Error loading agents:', data.error || 'Unknown error');
+                }
+            })
+            .catch(error => {
+                console.error('Error loading agents:', error);
+                const container = document.getElementById('agentSelector');
+                if (container) {
+                    container.innerHTML = '<div style="color: red; padding: 10px;">Error loading agents. Please refresh the page.</div>';
+                }
+            });
+    </script>
     <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
     <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
     <script type="text/javascript">
-        clippy.load('Clippy', function(agent) {
-            agent.show();
-            try {
-                if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
-                    agent.play('CheckingSomething', 5000);
+        // Only load Clippy if agent is not 'none'
+        {% if current_agent != 'none' %}
+        try {
+            clippy.load('{{ current_agent }}', function(agent) {
+                try {
+                    currentClippyAgent = agent;
+                    agent.show();
+                    try {
+                        if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
+                            // Wrap play in try-catch to prevent audio permission errors from breaking the page
+                            try {
+                                agent.play('CheckingSomething', 5000);
+                            } catch (playError) {
+                                console.warn('Could not play animation (audio permission may be required):', playError);
+                            }
+                        }
+                    } catch (animError) {
+                        console.warn('Animation error:', animError);
+                    }
+                } catch (showError) {
+                    console.error('Error showing agent:', showError);
                 }
-            } catch (e) {}
-        });
+            });
+        } catch (loadError) {
+            console.error('Error loading Clippy agent:', loadError);
+        }
+        {% endif %}
     </script>
 </body>
 </html>
