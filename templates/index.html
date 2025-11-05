@@ -700,11 +700,15 @@
 <script type="text/javascript">
     initClippyWithSession('{{ clippy_agent }}', {
         useAnimations: false, // Use instant show during active session
-        onLoad: function(agent, sessionState) {
+        onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState) {
             try {
                 var params = new URLSearchParams(window.location.search || '');
                 var q = params.get('search');
                 if (q && q.trim().length > 0 && agent.hasAnimation && agent.hasAnimation('Searching')) {
+                    // Page-specific animation should always play - clear saved state if restoring
+                    if (willRestoreAnimation && clearSavedState) {
+                        clearSavedState();
+                    }
                     agent.play('Searching', 4000);
                 }
             } catch (e) {}

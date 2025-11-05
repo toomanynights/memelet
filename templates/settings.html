@@ -295,6 +295,11 @@
                                         // Use animations when switching agents (Settings page exception)
                                         clippy.load(agentName, function(agent) {
                                             currentClippyAgent = agent;
+                                            window.currentClippyAgent = agent;
+                                            // Hook into speak function to track full speech text
+                                            if (window.hookClippySpeech) {
+                                                window.hookClippySpeech(agent);
+                                            }
                                             agent.show(); // Use animation (default behavior, not instant)
                                             try {
                                                 if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
@@ -308,6 +313,11 @@
                                     // Use animations when switching agents (Settings page exception)
                                     clippy.load(agentName, function(agent) {
                                         currentClippyAgent = agent;
+                                        window.currentClippyAgent = agent;
+                                        // Hook into speak function to track full speech text
+                                        if (window.hookClippySpeech) {
+                                            window.hookClippySpeech(agent);
+                                        }
                                         agent.show(); // Use animation (default behavior, not instant)
                                         try {
                                             if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
@@ -399,11 +409,15 @@
         try {
             initClippyWithSession('{{ current_agent }}', {
                 useAnimations: false, // Use instant show during active session
-                onLoad: function(agent, sessionState) {
+                onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState) {
                     try {
                         currentClippyAgent = agent;
                         try {
                             if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
+                                // Page-specific animation should always play - clear saved state if restoring
+                                if (willRestoreAnimation && clearSavedState) {
+                                    clearSavedState();
+                                }
                                 // Wrap play in try-catch to prevent audio permission errors from breaking the page
                                 try {
                                     agent.play('CheckingSomething', 5000);
