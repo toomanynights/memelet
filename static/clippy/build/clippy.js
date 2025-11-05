@@ -344,6 +344,8 @@ clippy.Agent.prototype = {
         $(window).on('resize', $.proxy(this.reposition, this));
 
         this._el.on('mousedown', $.proxy(this._onMouseDown, this));
+        // Add touch support for mobile devices
+        this._el.on('touchstart', $.proxy(this._onTouchStart, this));
 
         this._el.on('dblclick', $.proxy(this._onDoubleClick, this));
     },
@@ -390,20 +392,42 @@ clippy.Agent.prototype = {
         this._startDrag(e);
     },
 
+    _onTouchStart:function (e) {
+        e.preventDefault();
+        // Get the first touch point
+        var touch = e.originalEvent.touches[0] || e.originalEvent.changedTouches[0];
+        // Create a synthetic event object with the same properties as mouse events
+        var syntheticEvent = {
+            pageX: touch.pageX,
+            pageY: touch.pageY,
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            preventDefault: function() { e.preventDefault(); }
+        };
+        this._startDrag(syntheticEvent, true); // true indicates touch event
+    },
+
 
     /**************************** Drag ************************************/
 
-    _startDrag:function (e) {
+    _startDrag:function (e, isTouch) {
         // pause animations
         this.pause();
         this._balloon.hide(true);
         this._offset = this._calculateClickOffset(e);
+        this._isTouch = isTouch || false;
 
         this._moveHandle = $.proxy(this._dragMove, this);
         this._upHandle = $.proxy(this._finishDrag, this);
 
-        $(window).on('mousemove', this._moveHandle);
-        $(window).on('mouseup', this._upHandle);
+        if (this._isTouch) {
+            $(window).on('touchmove', this._moveHandle);
+            $(window).on('touchend', this._upHandle);
+            $(window).on('touchcancel', this._upHandle);
+        } else {
+            $(window).on('mousemove', this._moveHandle);
+            $(window).on('mouseup', this._upHandle);
+        }
 
         this._dragUpdateLoop = window.setTimeout($.proxy(this._updateLocation, this), 10);
     },
@@ -426,17 +450,45 @@ clippy.Agent.prototype = {
 
     _dragMove:function (e) {
         e.preventDefault();
-        var x = e.clientX - this._offset.left;
-        var y = e.clientY - this._offset.top;
+        var clientX, clientY;
+        
+        // Check if this is a touch event (either by flag or by checking event type)
+        var isTouchEvent = this._isTouch || (e.originalEvent && (e.originalEvent.touches || e.originalEvent.changedTouches));
+        
+        if (isTouchEvent) {
+            // Handle touch events
+            var touch = e.originalEvent.touches[0] || e.originalEvent.changedTouches[0];
+            if (touch) {
+                clientX = touch.clientX;
+                clientY = touch.clientY;
+            } else {
+                return; // No valid touch point
+            }
+        } else {
+            // Handle mouse events
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+        
+        var x = clientX - this._offset.left;
+        var y = clientY - this._offset.top;
         this._taregtX = x;
         this._targetY = y;
     },
 
-    _finishDrag:function () {
+    _finishDrag:function (e) {
         window.clearTimeout(this._dragUpdateLoop);
-        // remove handles
-        $(window).off('mousemove', this._moveHandle);
-        $(window).off('mouseup', this._upHandle);
+        // remove handles - check both flag and event type to be safe
+        var isTouchEvent = this._isTouch || (e && e.originalEvent && (e.originalEvent.touches || e.originalEvent.changedTouches));
+        if (isTouchEvent) {
+            $(window).off('touchmove', this._moveHandle);
+            $(window).off('touchend', this._upHandle);
+            $(window).off('touchcancel', this._upHandle);
+        } else {
+            $(window).off('mousemove', this._moveHandle);
+            $(window).off('mouseup', this._upHandle);
+        }
+        this._isTouch = false;
         // resume animations
         this._balloon.show();
         this.reposition();
