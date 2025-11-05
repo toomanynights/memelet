@@ -693,19 +693,22 @@
 {% if clippy_agent and clippy_agent != 'none' %}
 <!-- Clippy.js -->
 <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
+<!-- Clippy Session Management -->
+<script src="{{ url_for('static', filename='js/clippy-session.js') }}"></script>
 
 <!-- Init script -->
 <script type="text/javascript">
-    clippy.load('{{ clippy_agent }}', function(agent) {
-        agent.show();
-        agent.speak('If you need help, just ask! Or don\'t. I\'ll still be here. Watching.');
-        try {
-            var params = new URLSearchParams(window.location.search || '');
-            var q = params.get('search');
-            if (q && q.trim().length > 0 && agent.hasAnimation && agent.hasAnimation('Searching')) {
-                agent.play('Searching', 4000);
-            }
-        } catch (e) {}
+    initClippyWithSession('{{ clippy_agent }}', {
+        useAnimations: false, // Use instant show during active session
+        onLoad: function(agent, sessionState) {
+            try {
+                var params = new URLSearchParams(window.location.search || '');
+                var q = params.get('search');
+                if (q && q.trim().length > 0 && agent.hasAnimation && agent.hasAnimation('Searching')) {
+                    agent.play('Searching', 4000);
+                }
+            } catch (e) {}
+        }
     });
 </script>
 {% endif %}

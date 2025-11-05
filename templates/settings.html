@@ -292,9 +292,10 @@
                                 try {
                                     currentClippyAgent.hide(false, function() {
                                         // After hide animation completes, load new agent
+                                        // Use animations when switching agents (Settings page exception)
                                         clippy.load(agentName, function(agent) {
                                             currentClippyAgent = agent;
-                                            agent.show();
+                                            agent.show(); // Use animation (default behavior, not instant)
                                             try {
                                                 if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
                                                     agent.play('CheckingSomething', 5000);
@@ -304,9 +305,10 @@
                                     });
                                 } catch (e) {
                                     // If hide fails, just load new agent immediately
+                                    // Use animations when switching agents (Settings page exception)
                                     clippy.load(agentName, function(agent) {
                                         currentClippyAgent = agent;
-                                        agent.show();
+                                        agent.show(); // Use animation (default behavior, not instant)
                                         try {
                                             if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
                                                 agent.play('CheckingSomething', 5000);
@@ -316,9 +318,10 @@
                                 }
                             } else {
                                 // No current agent, load immediately
+                                // Use animations when switching agents (Settings page exception)
                                 clippy.load(agentName, function(agent) {
                                     currentClippyAgent = agent;
-                                    agent.show();
+                                    agent.show(); // Use animation (default behavior, not instant)
                                     try {
                                         if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
                                             agent.play('CheckingSomething', 5000);
@@ -389,28 +392,31 @@
     </script>
     <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
     <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/clippy-session.js') }}"></script>
     <script type="text/javascript">
         // Only load Clippy if agent is not 'none'
         {% if current_agent != 'none' %}
         try {
-            clippy.load('{{ current_agent }}', function(agent) {
-                try {
-                    currentClippyAgent = agent;
-                    agent.show();
+            initClippyWithSession('{{ current_agent }}', {
+                useAnimations: false, // Use instant show during active session
+                onLoad: function(agent, sessionState) {
                     try {
-                        if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
-                            // Wrap play in try-catch to prevent audio permission errors from breaking the page
-                            try {
-                                agent.play('CheckingSomething', 5000);
-                            } catch (playError) {
-                                console.warn('Could not play animation (audio permission may be required):', playError);
+                        currentClippyAgent = agent;
+                        try {
+                            if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
+                                // Wrap play in try-catch to prevent audio permission errors from breaking the page
+                                try {
+                                    agent.play('CheckingSomething', 5000);
+                                } catch (playError) {
+                                    console.warn('Could not play animation (audio permission may be required):', playError);
+                                }
                             }
+                        } catch (animError) {
+                            console.warn('Animation error:', animError);
                         }
-                    } catch (animError) {
-                        console.warn('Animation error:', animError);
+                    } catch (showError) {
+                        console.error('Error showing agent:', showError);
                     }
-                } catch (showError) {
-                    console.error('Error showing agent:', showError);
                 }
             });
         } catch (loadError) {
