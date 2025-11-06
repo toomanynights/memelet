@@ -693,8 +693,12 @@
 {% if clippy_agent and clippy_agent != 'none' %}
 <!-- Clippy.js -->
 <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
+<!-- Clippy Phrase Management -->
+<script src="{{ url_for('static', filename='js/clippy-phrases.js') }}"></script>
 <!-- Clippy Session Management -->
 <script src="{{ url_for('static', filename='js/clippy-session.js') }}"></script>
+<!-- Clippy Debug Functions -->
+<script src="{{ url_for('static', filename='js/clippy-debug.js') }}"></script>
 
 <!-- Init script -->
 <script type="text/javascript">

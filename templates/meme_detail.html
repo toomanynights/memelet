@@ -577,7 +577,9 @@
     {% if clippy_agent and clippy_agent != 'none' %}
     <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
     <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/clippy-phrases.js') }}"></script>
     <script src="{{ url_for('static', filename='js/clippy-session.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/clippy-debug.js') }}"></script>
     <script type="text/javascript">
         initClippyWithSession('{{ clippy_agent }}', {
             useAnimations: false // Use instant show during active session
