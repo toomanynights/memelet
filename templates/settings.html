@@ -252,7 +252,54 @@
             return preview;
         }
         
-        let currentClippyAgent = null;
+        function loadAgentForSettings(agentName, options) {
+            if (typeof window.setClippyAgent !== 'function') {
+                return Promise.reject(new Error('Clippy session helpers are unavailable.'));
+            }
+
+            options = options || {};
+            const normalizedName = agentName === 'none' ? null : agentName;
+            const userOnLoad = options.onLoad;
+
+            const loadOptions = {
+                useAnimations: options.useAnimations,
+                fastHide: options.fastHide,
+                skipTeardown: options.skipTeardown,
+                onNewSession: options.onNewSession,
+                onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState) {
+                    if (normalizedName && agent) {
+                        try {
+                            if (window.hookClippySpeech) {
+                                window.hookClippySpeech(agent);
+                            }
+                            window.currentClippyAgent = agent;
+                            if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
+                                if (willRestoreAnimation && clearSavedState) {
+                                    clearSavedState();
+                                }
+                                try {
+                                    agent.play('CheckingSomething', 5000);
+                                } catch (playError) {
+                                    console.warn('Could not play animation (audio permission may be required):', playError);
+                                }
+                            }
+                        } catch (animError) {
+                            console.warn('Animation error:', animError);
+                        }
+                    }
+
+                    if (typeof userOnLoad === 'function') {
+                        try {
+                            userOnLoad(agent, sessionState, willRestoreAnimation, clearSavedState);
+                        } catch (userError) {
+                            console.warn('Error in custom onLoad callback:', userError);
+                        }
+                    }
+                }
+            };
+
+            return window.setClippyAgent(normalizedName, loadOptions);
+        }
         
         function selectAgent(agentName) {
             fetch('/api/settings/clippy-agent', {
@@ -272,80 +319,25 @@
                     const selected = document.querySelector(`.agent-preview[data-agent="${agentName}"]`);
                     if (selected) selected.classList.add('selected');
                     
-                    // Immediately load the selected agent
-                    if (agentName === 'none') {
-                        // Hide current agent if any
-                        if (currentClippyAgent) {
-                            try {
-                                currentClippyAgent.hide(false, function() {
-                                    currentClippyAgent = null;
-                                });
-                            } catch (e) {
-                                currentClippyAgent = null;
-                            }
+                    const enableAnimations = agentName !== 'none';
+                    const hideFast = agentName === 'none';
+
+                    loadAgentForSettings(agentName, {
+                        useAnimations: enableAnimations,
+                        fastHide: hideFast
+                    })
+                    .then(agent => {
+                        if (agent) {
+                            window.currentClippyAgent = agent;
                         }
-                    } else {
-                        // Load new agent
-                        if (typeof clippy !== 'undefined') {
-                            // Hide current agent if any, then load new one
-                            if (currentClippyAgent) {
-                                try {
-                                    currentClippyAgent.hide(false, function() {
-                                        // After hide animation completes, load new agent
-                                        // Use animations when switching agents (Settings page exception)
-                                        clippy.load(agentName, function(agent) {
-                                            currentClippyAgent = agent;
-                                            window.currentClippyAgent = agent;
-                                            // Hook into speak function to track full speech text
-                                            if (window.hookClippySpeech) {
-                                                window.hookClippySpeech(agent);
-                                            }
-                                            agent.show(); // Use animation (default behavior, not instant)
-                                            try {
-                                                if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
-                                                    agent.play('CheckingSomething', 5000);
-                                                }
-                                            } catch (e) {}
-                                        });
-                                    });
-                                } catch (e) {
-                                    // If hide fails, just load new agent immediately
-                                    // Use animations when switching agents (Settings page exception)
-                                    clippy.load(agentName, function(agent) {
-                                        currentClippyAgent = agent;
-                                        window.currentClippyAgent = agent;
-                                        // Hook into speak function to track full speech text
-                                        if (window.hookClippySpeech) {
-                                            window.hookClippySpeech(agent);
-                                        }
-                                        agent.show(); // Use animation (default behavior, not instant)
-                                        try {
-                                            if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
-                                                agent.play('CheckingSomething', 5000);
-                                            }
-                                        } catch (e) {}
-                                    });
-                                }
-                            } else {
-                                // No current agent, load immediately
-                                // Use animations when switching agents (Settings page exception)
-                                clippy.load(agentName, function(agent) {
-                                    currentClippyAgent = agent;
-                                    agent.show(); // Use animation (default behavior, not instant)
-                                    try {
-                                        if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
-                                            agent.play('CheckingSomething', 5000);
-                                        }
-                                    } catch (e) {}
-                                });
-                            }
-                        }
-                    }
-                    
-                    // Show feedback
-                    const msgEl = document.getElementById('agent-message');
-                    msgEl.innerHTML = `<div class="message success">Agent selection saved${agentName === 'none' ? ' (Clippy disabled)' : ''}!</div>`;
-                    setTimeout(() => msgEl.innerHTML = '', 3000);
+                        const msgEl = document.getElementById('agent-message');
+                        msgEl.innerHTML = `<div class="message success">Agent selection saved${agentName === 'none' ? ' (Clippy disabled)' : ''}!</div>`;
+                        setTimeout(() => msgEl.innerHTML = '', 3000);
+                    })
+                    .catch(error => {
+                        console.error('Error loading selected agent:', error);
+                        alert('Agent selection saved but failed to load the agent. Please refresh the page.');
+                    });
                 } else {
                     alert('Error saving selection: ' + (data.error || 'Unknown error'));
                 }
@@ -408,35 +400,19 @@
     <script type="text/javascript">
         // Only load Clippy if agent is not 'none'
         {% if current_agent != 'none' %}
-        try {
-            initClippyWithSession('{{ current_agent }}', {
-                useAnimations: false, // Use instant show during active session
-                onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState) {
-                    try {
-                        currentClippyAgent = agent;
-                        try {
-                            if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
-                                // Page-specific animation should always play - clear saved state if restoring
-                                if (willRestoreAnimation && clearSavedState) {
-                                    clearSavedState();
-                                }
-                                // Wrap play in try-catch to prevent audio permission errors from breaking the page
-                                try {
-                                    agent.play('CheckingSomething', 5000);
-                                } catch (playError) {
-                                    console.warn('Could not play animation (audio permission may be required):', playError);
-                                }
-                            }
-                        } catch (animError) {
-                            console.warn('Animation error:', animError);
-                        }
-                    } catch (showError) {
-                        console.error('Error showing agent:', showError);
-                    }
-                }
+        if (typeof loadAgentForSettings === 'function') {
+            loadAgentForSettings('{{ current_agent }}', {
+                useAnimations: false,
+                skipTeardown: true
+            }).catch(error => {
+                console.error('Error loading Clippy agent:', error);
             });
-        } catch (loadError) {
-            console.error('Error loading Clippy agent:', loadError);
+        } else {
+            console.error('Clippy agent loader unavailable – unable to initialize agent.');
+        }
+        {% else %}
+        if (typeof window.destroyClippyAgent === 'function') {
+            window.destroyClippyAgent({ fastHide: true, skipIfMissing: false });
         }
         {% endif %}
     </script>

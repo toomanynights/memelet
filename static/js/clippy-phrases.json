@@ -62,5 +62,17 @@
         "Tip: When in doubt, just add Impact font.",
         "It's {time} and you're still here. Impressive.",
         "The year is {year}. Still no flying cars, but at least we have Memelet."
-    ]
+    ],
+    "transformation": {
+        "bonzi": "It's me, Bonzi! Remember me? I'm not malware anymore! Probably.",
+        "clippy": "It looks like you're trying to make eye contact with a paperclip.",
+        "f1": "Beep boop! Sorry, that's just a nervous tic.",
+        "genie": "You've rubbed the lamp! That's not a metaphor... unless you want it to be.",
+        "genius": "I've done the calculations. The result is 'you should touch grass'.",
+        "links": "Nine lives, zero responsibilities.",
+        "merlin": "I can make your time disappear. Whoosh! There, two seconds gone.",
+        "peedy": "I can fly now! Still can't help, though.",
+        "rocky": "I've fetched your memes! They were in the trash again.",
+        "rover": "If you need me, just whistle. Or don't — I'll still come."
+    }
   }

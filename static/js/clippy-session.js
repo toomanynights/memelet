@@ -370,6 +370,123 @@
         });
     };
     
+    function clearClippyStoredState() {
+        sessionStorage.removeItem(ANIMATION_STATE_KEY);
+        sessionStorage.removeItem(SPEECH_TEXT_KEY);
+    }
+
+    function clearSessionTimer() {
+        localStorage.removeItem(SESSION_KEY);
+    }
+
+    /**
+     * Hide and fully teardown the current agent instance
+     * @param {Object} options
+     * @param {boolean} options.fastHide - Skip hide animation
+     * @param {boolean} options.skipIfMissing - Resolve immediately when no agent is active
+     * @returns {Promise<void>}
+     */
+    window.destroyClippyAgent = function(options) {
+        options = options || {};
+        const fastHide = options.fastHide || false;
+        const skipIfMissing = options.skipIfMissing !== undefined ? options.skipIfMissing : true;
+
+        const activeAgent = window.currentClippyAgent;
+
+        if (!activeAgent) {
+            if (!skipIfMissing) {
+                clearClippyStoredState();
+                clearSessionTimer();
+            }
+            return Promise.resolve();
+        }
+
+        return new Promise(function(resolve) {
+            try {
+                const cleanup = function() {
+                    try {
+                        if (activeAgent._balloon && activeAgent._balloon._balloon) {
+                            activeAgent._balloon._balloon.remove();
+                        }
+                        if (activeAgent._el && activeAgent._el.remove) {
+                            activeAgent._el.remove();
+                        }
+                    } catch (removeError) {
+                        console.warn('Error removing Clippy elements:', removeError);
+                    }
+
+                    window.currentClippyAgent = null;
+                    clearClippyStoredState();
+                    if (!options.preserveSession) {
+                        clearSessionTimer();
+                    }
+                    resolve();
+                };
+
+                activeAgent.hide(!!fastHide, cleanup);
+            } catch (e) {
+                console.warn('Error tearing down Clippy agent:', e);
+                window.currentClippyAgent = null;
+                clearClippyStoredState();
+                if (!options.preserveSession) {
+                    clearSessionTimer();
+                }
+                resolve();
+            }
+        });
+    };
+
+    /**
+     * Unified agent loader that optionally tears down the existing agent first.
+     * @param {string|null} agentName - Target agent name or null/'none' to disable.
+     * @param {Object} options
+     * @param {boolean} options.useAnimations - Force show animation even within active sessions.
+     * @param {boolean} options.fastHide - Skip hide animation when tearing down.
+     * @param {boolean} options.skipTeardown - Do not teardown before loading (useful on first load).
+     * @param {Function} options.onLoad - Callback invoked after agent loads (mirrors initClippyWithSession).
+     * @param {Function} options.onNewSession - Callback passed through to initClippyWithSession.
+     * @returns {Promise<Object|null>} Resolves with loaded agent or null if disabled.
+     */
+    window.setClippyAgent = function(agentName, options) {
+        options = options || {};
+        const normalizedName = (!agentName || agentName === 'none') ? null : agentName;
+        const useAnimations = options.useAnimations || false;
+        const fastHide = options.fastHide || false;
+        const skipTeardown = options.skipTeardown || false;
+        const onLoad = options.onLoad;
+        const onNewSession = options.onNewSession;
+
+        const prepare = skipTeardown ? Promise.resolve() : window.destroyClippyAgent({ fastHide: fastHide, preserveSession: !!options.preserveSession });
+
+        return prepare.then(function() {
+            if (!normalizedName) {
+                return null;
+            }
+
+            return new Promise(function(resolve, reject) {
+                try {
+                    initClippyWithSession(normalizedName, {
+                        useAnimations: useAnimations,
+                        onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState) {
+                            try {
+                                window.currentClippyAgent = agent;
+                                if (typeof onLoad === 'function') {
+                                    onLoad(agent, sessionState, willRestoreAnimation, clearSavedState);
+                                }
+                            } catch (callbackError) {
+                                console.warn('Error in Clippy onLoad callback:', callbackError);
+                            }
+                            resolve(agent);
+                        },
+                        onNewSession: onNewSession
+                    });
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        });
+    };
+
     // Save animation state before page unload
     window.addEventListener('beforeunload', function() {
         if (window.currentClippyAgent) {
