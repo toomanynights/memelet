@@ -103,5 +103,163 @@
         
         window.currentClippyAgent.speak(processedPhrase);
     };
+
+    /**
+ * Debug: List all available animations for current agent
+ * Usage: listClippyAnimations()
+ */
+window.listClippyAnimations = function() {
+    if (!window.currentClippyAgent) {
+        console.error('Clippy agent not loaded yet. Please wait for the agent to initialize.');
+        return;
+    }
+    
+    const agent = window.currentClippyAgent;
+    const animations = agent._animator._data.animations;
+    
+    if (!animations) {
+        console.error('No animation data available.');
+        return;
+    }
+    
+    console.log('Available animations for current agent:');
+    console.log('─'.repeat(60));
+    
+    const animList = Object.keys(animations).sort().map(name => {
+        const anim = animations[name];
+        const frameCount = anim.frames ? anim.frames.length : 0;
+        const duration = anim.frames ? anim.frames.reduce((sum, f) => sum + (f.duration || 0), 0) : 0;
+        return {
+            name: name,
+            frames: frameCount,
+            duration: duration + 'ms'
+        };
+    });
+    
+    console.table(animList);
+    console.log('─'.repeat(60));
+    console.log('To play an animation, use: playClippyAnimation("AnimationName")');
+    console.log('Example: playClippyAnimation("Show")');
+    
+    return animList;
+};
+
+/**
+ * Debug: Play a specific animation
+ * Usage: playClippyAnimation("Show") or playClippyAnimation("Wave", 3000)
+ * @param {string} animationName - Name of the animation to play
+ * @param {number} [duration] - Optional duration override in milliseconds
+ */
+window.playClippyAnimation = function(animationName, duration) {
+    if (!window.currentClippyAgent) {
+        console.error('Clippy agent not loaded yet. Please wait for the agent to initialize.');
+        return;
+    }
+    
+    if (!animationName || typeof animationName !== 'string') {
+        console.error('Please provide a valid animation name.');
+        console.log('Use listClippyAnimations() to see all available animations.');
+        return;
+    }
+    
+    const agent = window.currentClippyAgent;
+    const animations = agent._animator._data.animations;
+    
+    if (!animations[animationName]) {
+        console.error('Animation "' + animationName + '" not found.');
+        console.log('Available animations:', Object.keys(animations).sort().join(', '));
+        return;
+    }
+    
+    console.log('Playing animation:', animationName);
+    
+    if (duration) {
+        agent.play(animationName, duration);
+    } else {
+        agent.play(animationName);
+    }
+};
+
+/**
+ * Debug: Show detailed info about a specific animation
+ * Usage: inspectClippyAnimation("Show")
+ * @param {string} animationName - Name of the animation to inspect
+ */
+window.inspectClippyAnimation = function(animationName) {
+    if (!window.currentClippyAgent) {
+        console.error('Clippy agent not loaded yet. Please wait for the agent to initialize.');
+        return;
+    }
+    
+    if (!animationName || typeof animationName !== 'string') {
+        console.error('Please provide a valid animation name.');
+        return;
+    }
+    
+    const agent = window.currentClippyAgent;
+    const animations = agent._animator._data.animations;
+    
+    if (!animations[animationName]) {
+        console.error('Animation "' + animationName + '" not found.');
+        return;
+    }
+    
+    const anim = animations[animationName];
+    console.log('Animation:', animationName);
+    console.log('─'.repeat(60));
+    console.log('Frames:', anim.frames.length);
+    console.log('Total duration:', anim.frames.reduce((sum, f) => sum + (f.duration || 0), 0) + 'ms');
+    console.log('Has branching:', anim.frames.some(f => f.branching) ? 'Yes' : 'No');
+    console.log('Has sounds:', anim.frames.some(f => f.sound) ? 'Yes' : 'No');
+    console.log('Use exit branches:', anim.useExitBranching || false);
+    console.log('─'.repeat(60));
+    
+    console.log('Frame details:');
+    anim.frames.forEach((frame, idx) => {
+        const details = [];
+        details.push('Frame ' + idx);
+        details.push('duration: ' + frame.duration + 'ms');
+        if (frame.images) details.push('images: ' + frame.images.length);
+        if (frame.sound) details.push('sound: ' + frame.sound);
+        if (frame.exitBranch !== undefined) details.push('exitBranch: ' + frame.exitBranch);
+        if (frame.branching) details.push('has branching');
+        console.log('  ' + details.join(', '));
+    });
+    
+    return anim;
+};
+
+/**
+ * Debug: Stop current animation
+ * Usage: stopClippyAnimation()
+ */
+window.stopClippyAnimation = function() {
+    if (!window.currentClippyAgent) {
+        console.error('Clippy agent not loaded yet. Please wait for the agent to initialize.');
+        return;
+    }
+    
+    const agent = window.currentClippyAgent;
+    agent.stop();
+    console.log('Animation stopped.');
+};
+
+/**
+ * Debug: Compare animations across agents (useful for finding misnamed animations)
+ * Usage: compareAgentAnimations()
+ */
+window.compareAgentAnimations = function() {
+    console.log('Available agents to compare:');
+    console.log('Bonzi, Clippy, F1, Genie, Genius, Links, Merlin, Peedy, Rocky, Rover');
+    console.log('─'.repeat(60));
+    console.log('Note: This only shows what the current agent has loaded.');
+    console.log('To compare, you need to load different agents and check manually.');
+    
+    if (window.currentClippyAgent) {
+        console.log('Current agent has these animations:');
+        const anims = Object.keys(window.currentClippyAgent._animator._data.animations).sort();
+        console.log(anims.join(', '));
+    }
+};
 })();
 
