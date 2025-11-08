@@ -106,5 +106,14 @@
         "Tip of the day: Upload responsibly. Or don't, I'm not your dad.",
         "Happy {month}! Time flies when you're scrolling memes.",
         "Tip: You can tag memes. You won't, but you can."
+    ],
+    "settings": [
+        "Memelet status: stable. You, on the other hand…",
+        "Storage check complete! You're hoarding memes like it's 2012.",
+        "Indexing your memes… and your questionable sense of humor.",
+        "System idle. So are you.",
+        "Analyzing metadata: yep, still cringe.",
+        "Tip: You can't spell 'storage limit' without 'rage.'"
+
     ]     
   }

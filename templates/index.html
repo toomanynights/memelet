@@ -717,8 +717,9 @@
                     // If a quip will be spoken, load and speak it first, then play animation
                     if (willSpeakQuip) {
                         window.loadClippyPhrases().then(function() {
-                            var searchQuip = window.getRandomClippyPhrase('search');
-                            agent.speak(searchQuip);
+                            var categories = window.getQuipCategoriesForPage();
+                            var quip = window.getRandomClippyPhrase(categories);
+                            agent.speak(quip);
                             // Record that we spoke a quip
                             localStorage.setItem('clippy_last_quip_time', Date.now().toString());
                             localStorage.setItem('clippy_pages_since_quip', '0');

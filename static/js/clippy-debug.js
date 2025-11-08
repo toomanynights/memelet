@@ -290,7 +290,7 @@ window.debugClippyQuips = function() {
         quipCategories = ['random', 'meme_page'];
     } else if (path === '/settings') {
         currentPage = 'settings';
-        quipCategories = ['random'];
+        quipCategories = ['settings', 'random'];
     } else if (path === '/tags') {
         currentPage = 'tags';
         quipCategories = ['random'];

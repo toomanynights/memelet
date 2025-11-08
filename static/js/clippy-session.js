@@ -59,11 +59,19 @@
         } else if (page === 'search') {
             // On search page, ONLY use search category
             return 'search';
+        } else if (page === 'settings') {
+            return ['settings', 'random'];
         } else {
             // On other pages, just use random
             return 'random';
         }
     }
+    
+    /**
+     * Get appropriate quip categories for current page (exposed globally)
+     * @returns {string|string[]} Category or array of categories
+     */
+    window.getQuipCategoriesForPage = getQuipCategoriesForPage;
     
     /**
      * Record that a quip was spoken (reset page counter and update timestamp)
