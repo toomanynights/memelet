@@ -15,6 +15,95 @@
     const SPEECH_TEXT_KEY = 'clippy_speech_text';
     const PAGE_SPECIFIC_ANIMS = ['Searching', 'CheckingSomething']; // Animations to drop on navigation
     
+    // Random quip tracking
+    const QUIP_LAST_TIME_KEY = 'clippy_last_quip_time';
+    const QUIP_PAGE_COUNT_KEY = 'clippy_pages_since_quip';
+    const QUIP_MIN_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
+    const QUIP_MIN_PAGES = 20;
+    const QUIP_RANDOM_CHANCE = 0.25; // 25% chance (>75% threshold)
+    
+    /**
+     * Detect which page we're currently on
+     * @returns {string} Page identifier ('meme_detail', 'index', 'search', 'settings', 'tags')
+     */
+    function detectCurrentPage() {
+        const path = window.location.pathname;
+        const search = window.location.search;
+        
+        if (path.startsWith('/meme/')) {
+            return 'meme_detail';
+        } else if (path === '/settings') {
+            return 'settings';
+        } else if (path === '/tags') {
+            return 'tags';
+        } else if (path === '/' && search && search.indexOf('search=') !== -1) {
+            return 'search';
+        } else {
+            return 'index';
+        }
+    }
+    
+    /**
+     * Get appropriate quip categories for current page
+     * @returns {string|string[]} Category or array of categories
+     */
+    function getQuipCategoriesForPage() {
+        const page = detectCurrentPage();
+        
+        if (page === 'meme_detail') {
+            // On meme detail page, draw from both random and meme_page
+            return ['random', 'meme_page'];
+        } else if (page === 'index') {
+            // On index page, draw from both index and random
+            return ['index', 'random'];
+        } else if (page === 'search') {
+            // On search page, ONLY use search category
+            return 'search';
+        } else {
+            // On other pages, just use random
+            return 'random';
+        }
+    }
+    
+    /**
+     * Record that a quip was spoken (reset page counter and update timestamp)
+     */
+    function recordQuip() {
+        localStorage.setItem(QUIP_LAST_TIME_KEY, Date.now().toString());
+        localStorage.setItem(QUIP_PAGE_COUNT_KEY, '0');
+    }
+    
+    /**
+     * Increment page counter (called on each page load)
+     */
+    function incrementPageCount() {
+        const currentCount = parseInt(localStorage.getItem(QUIP_PAGE_COUNT_KEY) || '0', 10);
+        localStorage.setItem(QUIP_PAGE_COUNT_KEY, (currentCount + 1).toString());
+    }
+    
+    /**
+     * Check if random quip should be triggered
+     * @returns {boolean} True if quip should fire
+     */
+    function shouldTriggerRandomQuip() {
+        const lastQuipTime = parseInt(localStorage.getItem(QUIP_LAST_TIME_KEY) || '0', 10);
+        const pagesSinceQuip = parseInt(localStorage.getItem(QUIP_PAGE_COUNT_KEY) || '0', 10);
+        const now = Date.now();
+        const timeSinceQuip = now - lastQuipTime;
+        
+        // Must be more than 5 minutes since last quip
+        if (timeSinceQuip <= QUIP_MIN_TIME) {
+            return false;
+        }
+        
+        // Either random chance >25% OR pages since last quip > 20
+        const randomRoll = Math.random();
+        const passedRandomCheck = randomRoll > (1 - QUIP_RANDOM_CHANCE);
+        const passedPageCheck = pagesSinceQuip > QUIP_MIN_PAGES;
+        
+        return passedRandomCheck || passedPageCheck;
+    }
+    
     /**
      * Get current session state
      * @returns {Object} {isNewSession: boolean, isActive: boolean}
@@ -336,15 +425,42 @@
                 sessionStorage.removeItem(SPEECH_TEXT_KEY);
             }
             
-            // On new session, speak the welcome message
-            if (isNewSession) {
+            // Increment page count on every page load
+            incrementPageCount();
+            
+            // Check if we'll be speaking a quip
+            const willSpeakQuip = isNewSession || shouldTriggerRandomQuip();
+            
+            // Detect if we're on a page with page-specific animations (where quip will be handled by page-specific logic)
+            const currentPage = detectCurrentPage();
+            const isSearchPage = currentPage === 'search';
+            const isSettingsPage = currentPage === 'settings';
+            const hasPageSpecificAnimation = isSearchPage || isSettingsPage;
+            
+            // On new session, speak the welcome message (unless on page with page-specific animation)
+            if (isNewSession && !hasPageSpecificAnimation) {
                 setTimeout(function() {
                     // Use phrase loading from clippy-phrases.js
                     window.loadClippyPhrases().then(function() {
                         const welcomePhrase = window.getRandomClippyPhrase(['welcome', 'random']);
                         agent.speak(welcomePhrase);
+                        // Welcome speech counts as a quip
+                        recordQuip();
                     });
                 }, shouldAnimate ? 500 : 100); // Small delay to let show animation complete if used
+            } else if (!isNewSession && !hasPageSpecificAnimation) {
+                // Not a new session - check if we should trigger a random quip (skip if page has page-specific animation)
+                const shouldQuip = shouldTriggerRandomQuip();
+                if (shouldQuip) {
+                    setTimeout(function() {
+                        window.loadClippyPhrases().then(function() {
+                            const categories = getQuipCategoriesForPage();
+                            const randomQuip = window.getRandomClippyPhrase(categories);
+                            agent.speak(randomQuip);
+                            recordQuip();
+                        });
+                    }, shouldAnimate ? 500 : 100);
+                }
             }
             
             // Call custom onLoad callback
@@ -360,7 +476,7 @@
                         clearTimeout(restoreTimeout);
                     }
                 };
-                onLoad(agent, sessionState, willRestoreAnimation, clearSavedState);
+                onLoad(agent, sessionState, willRestoreAnimation, clearSavedState, willSpeakQuip);
             }
             
             // Call onNewSession callback if applicable
@@ -467,11 +583,11 @@
                 try {
                     initClippyWithSession(normalizedName, {
                         useAnimations: useAnimations,
-                        onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState) {
+                        onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState, willSpeakQuip) {
                             try {
                                 window.currentClippyAgent = agent;
                                 if (typeof onLoad === 'function') {
-                                    onLoad(agent, sessionState, willRestoreAnimation, clearSavedState);
+                                    onLoad(agent, sessionState, willRestoreAnimation, clearSavedState, willSpeakQuip);
                                 }
                             } catch (callbackError) {
                                 console.warn('Error in Clippy onLoad callback:', callbackError);

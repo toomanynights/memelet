@@ -505,7 +505,7 @@
         try {
             initClippyWithSession('{{ current_agent }}', {
                 useAnimations: false, // Use instant show during active session
-                onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState) {
+                onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState, willSpeakQuip) {
                     try {
                         currentClippyAgent = agent;
                         try {
@@ -514,11 +514,29 @@
                                 if (willRestoreAnimation && clearSavedState) {
                                     clearSavedState();
                                 }
-                                // Wrap play in try-catch to prevent audio permission errors from breaking the page
-                                try {
-                                    agent.play('CheckingSomething', 5000);
-                                } catch (playError) {
-                                    console.warn('Could not play animation (audio permission may be required):', playError);
+                                
+                                // If a quip will be spoken, load and speak it first, then play animation
+                                if (willSpeakQuip) {
+                                    window.loadClippyPhrases().then(function() {
+                                        var randomQuip = window.getRandomClippyPhrase('random');
+                                        agent.speak(randomQuip);
+                                        // Record that we spoke a quip
+                                        localStorage.setItem('clippy_last_quip_time', Date.now().toString());
+                                        localStorage.setItem('clippy_pages_since_quip', '0');
+                                        // Animation will queue after the speech
+                                        try {
+                                            agent.play('CheckingSomething', 5000);
+                                        } catch (playError) {
+                                            console.warn('Could not play animation (audio permission may be required):', playError);
+                                        }
+                                    });
+                                } else {
+                                    // No quip, just play animation immediately
+                                    try {
+                                        agent.play('CheckingSomething', 5000);
+                                    } catch (playError) {
+                                        console.warn('Could not play animation (audio permission may be required):', playError);
+                                    }
                                 }
                             }
                         } catch (animError) {

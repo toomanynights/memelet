@@ -704,7 +704,7 @@
 <script type="text/javascript">
     initClippyWithSession('{{ clippy_agent }}', {
         useAnimations: false, // Use instant show during active session
-        onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState) {
+        onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState, willSpeakQuip) {
             try {
                 var params = new URLSearchParams(window.location.search || '');
                 var q = params.get('search');
@@ -713,7 +713,22 @@
                     if (willRestoreAnimation && clearSavedState) {
                         clearSavedState();
                     }
-                    agent.play('Searching', 4000);
+                    
+                    // If a quip will be spoken, load and speak it first, then play animation
+                    if (willSpeakQuip) {
+                        window.loadClippyPhrases().then(function() {
+                            var searchQuip = window.getRandomClippyPhrase('search');
+                            agent.speak(searchQuip);
+                            // Record that we spoke a quip
+                            localStorage.setItem('clippy_last_quip_time', Date.now().toString());
+                            localStorage.setItem('clippy_pages_since_quip', '0');
+                            // Animation will queue after the speech
+                            agent.play('Searching', 4000);
+                        });
+                    } else {
+                        // No quip, just play animation immediately
+                        agent.play('Searching', 4000);
+                    }
                 }
             } catch (e) {}
         }

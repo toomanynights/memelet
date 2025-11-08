@@ -39,16 +39,52 @@
     }
     
     /**
+     * Extract number from stat badge element
+     * @param {string} className - Class name of the stat badge (e.g., 'total', 'error')
+     * @returns {number|null} Extracted number or null if not found
+     */
+    function getStatBadgeNumber(className) {
+        const badge = document.querySelector('.stat-badge.' + className);
+        if (!badge) return null;
+        
+        // Extract number from text like "Total: 123" or "Errors: 5"
+        const text = badge.textContent || badge.innerText || '';
+        const match = text.match(/:\s*(\d+)/);
+        if (match && match[1]) {
+            return parseInt(match[1], 10);
+        }
+        return null;
+    }
+    
+    /**
+     * Extract number of results from results-info element
+     * @returns {number|null} Number of search results or null if not found
+     */
+    function getSearchResultsCount() {
+        const resultsInfo = document.querySelector('.results-info');
+        if (!resultsInfo) return null;
+        
+        // Extract number from text like "Showing 5 result(s)"
+        const text = resultsInfo.textContent || resultsInfo.innerText || '';
+        const match = text.match(/Showing\s+(\d+)\s+result/i);
+        if (match && match[1]) {
+            return parseInt(match[1], 10);
+        }
+        return null;
+    }
+    
+    /**
      * Process placeholder keys in phrases (e.g., {weekday}, {date})
      * @param {string} phrase - Phrase with potential placeholders
-     * @returns {string} Phrase with placeholders replaced
+     * @returns {Object} {phrase: string, needsReroll: boolean}
      */
     function processPhrasePlaceholders(phrase) {
         if (!phrase || typeof phrase !== 'string') {
-            return phrase;
+            return { phrase: phrase, needsReroll: false };
         }
         
         const now = new Date();
+        let needsReroll = false;
         
         // Define placeholder replacements
         const placeholders = {
@@ -72,6 +108,30 @@
             },
             'day': function() {
                 return now.getDate().toString();
+            },
+            'memes': function() {
+                const count = getStatBadgeNumber('total');
+                if (count === null || count === 0) {
+                    needsReroll = true;
+                    return '0';
+                }
+                return count.toString();
+            },
+            'errors': function() {
+                const count = getStatBadgeNumber('error');
+                if (count === null || count === 0) {
+                    needsReroll = true;
+                    return '0';
+                }
+                return count.toString();
+            },
+            'found': function() {
+                const count = getSearchResultsCount();
+                if (count === null || count === 0) {
+                    needsReroll = true;
+                    return '0';
+                }
+                return count.toString();
             }
         };
         
@@ -84,7 +144,7 @@
             }
         }
         
-        return processedPhrase;
+        return { phrase: processedPhrase, needsReroll: needsReroll };
     }
     
     /**
@@ -114,12 +174,46 @@
             return "If you need help, just ask! Or don't. I'll still be here. Watching.";
         }
         
-        // Select random phrase
+        // Try to select a phrase that doesn't need rerolling
+        const maxAttempts = 10; // Prevent infinite loops
+        let excludedIndices = [];
+        
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            // Get available indices (not excluded)
+            const availableIndices = [];
+            for (let i = 0; i < allPhrases.length; i++) {
+                if (excludedIndices.indexOf(i) === -1) {
+                    availableIndices.push(i);
+                }
+            }
+            
+            // If we've excluded everything, reset and use any phrase
+            if (availableIndices.length === 0) {
+                excludedIndices = [];
+                break;
+            }
+            
+            // Select random phrase from available ones
+            const randomIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+            const selectedPhrase = allPhrases[randomIndex];
+            
+            // Process placeholders in the phrase
+            const result = processPhrasePlaceholders(selectedPhrase);
+            
+            // If it doesn't need rerolling, use it
+            if (!result.needsReroll) {
+                return result.phrase;
+            }
+            
+            // Otherwise, exclude this phrase and try again
+            excludedIndices.push(randomIndex);
+        }
+        
+        // Fallback: just use a random phrase even if it needs rerolling
         const randomIndex = Math.floor(Math.random() * allPhrases.length);
         const selectedPhrase = allPhrases[randomIndex];
-        
-        // Process placeholders in the phrase
-        return processPhrasePlaceholders(selectedPhrase);
+        const result = processPhrasePlaceholders(selectedPhrase);
+        return result.phrase;
     }
     
     // Expose functions globally
@@ -147,7 +241,10 @@
      * @param {string} phrase - Phrase with placeholders
      * @returns {string} Processed phrase
      */
-    window.processPhrasePlaceholders = processPhrasePlaceholders;
+    window.processPhrasePlaceholders = function(phrase) {
+        const result = processPhrasePlaceholders(phrase);
+        return typeof result === 'object' ? result.phrase : result;
+    };
     
     /**
      * Get random phrase (exposed for internal use)

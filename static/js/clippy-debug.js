@@ -9,6 +9,12 @@
     const SESSION_KEY = 'clippy_session_time';
     const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
     
+    // Random quip tracking keys (must match clippy-session.js)
+    const QUIP_LAST_TIME_KEY = 'clippy_last_quip_time';
+    const QUIP_PAGE_COUNT_KEY = 'clippy_pages_since_quip';
+    const QUIP_MIN_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
+    const QUIP_MIN_PAGES = 20;
+    
     /**
      * Debug: Check current session state
      * Usage: debugClippySession()
@@ -260,6 +266,137 @@ window.compareAgentAnimations = function() {
         const anims = Object.keys(window.currentClippyAgent._animator._data.animations).sort();
         console.log(anims.join(', '));
     }
+};
+
+/**
+ * Debug: Check random quip status
+ * Usage: debugClippyQuips()
+ */
+window.debugClippyQuips = function() {
+    const lastQuipTime = parseInt(localStorage.getItem(QUIP_LAST_TIME_KEY) || '0', 10);
+    const pagesSinceQuip = parseInt(localStorage.getItem(QUIP_PAGE_COUNT_KEY) || '0', 10);
+    const now = Date.now();
+    const timeSinceQuip = now - lastQuipTime;
+    const minutesSinceQuip = (timeSinceQuip / (60 * 1000)).toFixed(2);
+    
+    // Detect current page
+    const path = window.location.pathname;
+    const search = window.location.search;
+    let currentPage = 'index';
+    let quipCategories = ['index', 'random'];
+    
+    if (path.startsWith('/meme/')) {
+        currentPage = 'meme_detail';
+        quipCategories = ['random', 'meme_page'];
+    } else if (path === '/settings') {
+        currentPage = 'settings';
+        quipCategories = ['random'];
+    } else if (path === '/tags') {
+        currentPage = 'tags';
+        quipCategories = ['random'];
+    } else if (path === '/' && search && search.indexOf('search=') !== -1) {
+        currentPage = 'search';
+        quipCategories = ['search'];
+    }
+    
+    console.log('═'.repeat(60));
+    console.log('RANDOM QUIP STATUS');
+    console.log('═'.repeat(60));
+    console.log('Current page:', currentPage);
+    console.log('Quip categories:', quipCategories.join(', '));
+    console.log('─'.repeat(60));
+    
+    if (!lastQuipTime) {
+        console.log('Last quip: NEVER (no quips recorded yet)');
+    } else {
+        console.log('Last quip:', new Date(lastQuipTime).toLocaleString());
+        console.log('Time since:', minutesSinceQuip, 'minutes');
+    }
+    
+    console.log('Pages since last quip:', pagesSinceQuip);
+    console.log('─'.repeat(60));
+    console.log('TRIGGER CONDITIONS:');
+    console.log('  ✓ Time requirement: >' + (QUIP_MIN_TIME / 60000) + ' minutes');
+    console.log('  ✓ Then EITHER:');
+    console.log('    - Random chance >75% (25% probability)');
+    console.log('    - OR pages since quip >' + QUIP_MIN_PAGES);
+    console.log('─'.repeat(60));
+    
+    const meetsTimeReq = timeSinceQuip > QUIP_MIN_TIME;
+    const meetsPageReq = pagesSinceQuip > QUIP_MIN_PAGES;
+    
+    console.log('CURRENT STATE:');
+    console.log('  Time requirement met:', meetsTimeReq ? '✓ YES' : '✗ NO (need ' + ((QUIP_MIN_TIME - timeSinceQuip) / 60000).toFixed(2) + ' more minutes)');
+    console.log('  Page requirement met:', meetsPageReq ? '✓ YES' : '✗ NO (need ' + (QUIP_MIN_PAGES - pagesSinceQuip + 1) + ' more pages)');
+    
+    if (meetsTimeReq) {
+        console.log('  Status: READY (will check random roll on next page load)');
+        if (meetsPageReq) {
+            console.log('  Note: Page requirement also met, so quip WILL fire on next page load');
+        } else {
+            console.log('  Note: 25% chance to fire on next page load (random roll)');
+        }
+    } else {
+        console.log('  Status: NOT READY (time requirement not met)');
+    }
+    
+    console.log('═'.repeat(60));
+    
+    return {
+        currentPage: currentPage,
+        quipCategories: quipCategories,
+        lastQuipTime: lastQuipTime,
+        pagesSinceQuip: pagesSinceQuip,
+        minutesSinceQuip: parseFloat(minutesSinceQuip),
+        meetsTimeReq: meetsTimeReq,
+        meetsPageReq: meetsPageReq
+    };
+};
+
+/**
+ * Debug: Force a quip to trigger on next page load
+ * Usage: forceClippyQuip()
+ */
+window.forceClippyQuip = function() {
+    // Set time since last quip to 6 minutes ago (just over the 5 minute threshold)
+    const sixMinutesAgo = Date.now() - (6 * 60 * 1000);
+    localStorage.setItem(QUIP_LAST_TIME_KEY, sixMinutesAgo.toString());
+    
+    // Set pages since last quip to 21 (just over the 20 page threshold)
+    localStorage.setItem(QUIP_PAGE_COUNT_KEY, '21');
+    
+    console.log('═'.repeat(60));
+    console.log('FORCE QUIP ENABLED');
+    console.log('═'.repeat(60));
+    console.log('✓ Time since last quip set to 6 minutes ago');
+    console.log('✓ Pages since last quip set to 21');
+    console.log('');
+    console.log('A random quip WILL fire on the next page load.');
+    console.log('Refreshing page in 2 seconds...');
+    console.log('═'.repeat(60));
+    
+    setTimeout(function() {
+        location.reload();
+    }, 2000);
+};
+
+/**
+ * Debug: Reset quip tracking (clear all quip data)
+ * Usage: resetClippyQuips()
+ */
+window.resetClippyQuips = function() {
+    localStorage.removeItem(QUIP_LAST_TIME_KEY);
+    localStorage.removeItem(QUIP_PAGE_COUNT_KEY);
+    
+    console.log('═'.repeat(60));
+    console.log('Quip tracking reset!');
+    console.log('All quip data cleared from localStorage.');
+    console.log('Refreshing page in 1 second...');
+    console.log('═'.repeat(60));
+    
+    setTimeout(function() {
+        location.reload();
+    }, 1000);
 };
 })();
 

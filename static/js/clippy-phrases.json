@@ -74,5 +74,37 @@
         "peedy": "I can fly now! Still can't help, though.",
         "rocky": "I've fetched your memes! They were in the trash again.",
         "rover": "If you need me, just whistle. Or don't — I'll still come."
-    }
+    },
+    "search": [
+        "You're searching for memes. I'm not sure why.",
+        "Searching your meme archives… results may disturb you.",
+        "Searching... You could've tagged things, but no, chaos is fun.",
+        "I found {found} results and a deep sense of unease.",
+        "Looking up old memes? Ah, nostalgia — humanity's coping mechanism.",
+        "You search like someone trying to find meaning. Good luck with both.",
+        "Searching… it's worse than I thought.",
+        "Let's see what horrors you've tagged under that word.",
+        "I found {found} results, but none will bring you peace.",
+        "Searching your archives… and questioning your life choices.",
+        "Query processed. I wish I hadn't."
+    ],
+    "index": [
+        "Some days I miss the Word toolbar. At least it had structure.",
+        "You currently have {memes} memes. That's either impressive or alarming.",
+        "It looks like you're browsing memes instead of working. Excellent time management.",
+        "I've seen your memes. You need therapy, not templates.",
+        "Found {errors} errors. Your birth not counted.",
+        "Your memes are your children. You've abandoned at least twelve.",
+        "Your memes aged well — like milk.",
+        "Remember: one day these memes will outlive us all.",
+        "Looks like you're building a legacy. A deeply cursed one.",
+         "I'm not saying your memes define you, but… they definitely do.",
+        "You haven't uploaded anything in a while. Experiencing meme burnout?",
+        "It's {weekday}. Statistically, the worst day to attempt self-improvement.",
+        "Today is {weekday}. Your memes are timeless, but you aren't.",
+        "Fun fact: deleting memes doesn't delete the memory of posting them.",
+        "Tip of the day: Upload responsibly. Or don't, I'm not your dad.",
+        "Happy {month}! Time flies when you're scrolling memes.",
+        "Tip: You can tag memes. You won't, but you can."
+    ]     
   }
