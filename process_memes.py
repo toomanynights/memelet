@@ -187,25 +187,29 @@ def _build_prompt_with_tag_suggestions(base_prompt: str) -> str:
     return prompt_with_property
 
 def apply_tags_to_meme(meme_id, tag_ids):
-    """Apply given tags to a meme. Skip tags that already exist."""
+    """Apply given tags to a meme. Skip tags that already exist.
+    Returns the count of actually applied (new) tags."""
     if not tag_ids:
-        return
+        return 0
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    applied_count = 0
     for tag_id in tag_ids:
         try:
             cursor.execute("""
                 INSERT INTO meme_tags (meme_id, tag_id)
                 VALUES (?, ?)
             """, (meme_id, tag_id))
+            applied_count += 1
         except sqlite3.IntegrityError:
             # Tag already exists for this meme, skip
             pass
     
     conn.commit()
     conn.close()
+    return applied_count
 
 def _get_meme_text_blob(meme_id: int) -> str:
     """Collect text fields for a meme and return a consolidated text blob.
@@ -276,9 +280,9 @@ def ai_suggest_and_apply_tags_from_text(meme_id: int):
             return [], []
         tag_ids, applied_names, unknown_names = _map_tag_names_to_ids(suggested_names)
         if applied_names:
-            apply_tags_to_meme(meme_id, tag_ids)
-        if applied_names:
-            print(f"  🏷️ Applied AI tags from text: {', '.join(applied_names)}")
+            actually_applied_count = apply_tags_to_meme(meme_id, tag_ids)
+            if actually_applied_count > 0:
+                print(f"  🏷️ Applied AI tags from text: {', '.join(applied_names)}")
         if unknown_names:
             print(f"  ⚠️ Ignored unknown/unavailable tags: {', '.join(unknown_names)}")
         return applied_names, unknown_names
@@ -317,10 +321,11 @@ def scan_tags_for_memes(meme_ids=None, run_path_parse=True, run_ai_text=True, jo
             try:
                 t_ids = parse_tags_from_filename(file_path)
                 if t_ids:
-                    apply_tags_to_meme(meme_id, t_ids)
-                    total_applied += len(t_ids)
-                    print(f"  ✓ Path tags applied: {len(t_ids)}")
-                    applied_any = True
+                    actually_applied = apply_tags_to_meme(meme_id, t_ids)
+                    total_applied += actually_applied
+                    if actually_applied > 0:
+                        print(f"  ✓ Path tags applied: {actually_applied}")
+                        applied_any = True
                 else:
                     print("  ℹ️ No path-derived tags")
             except Exception as e:
@@ -596,10 +601,11 @@ def parse_tags_for_all_memes():
         
         if tag_ids:
             # Apply tags to meme
-            apply_tags_to_meme(meme_id, tag_ids)
-            total_parsed += 1
-            total_tags += len(tag_ids)
-            print(f"  ✓ Applied {len(tag_ids)} tag(s) to meme id={meme_id}")
+            actually_applied = apply_tags_to_meme(meme_id, tag_ids)
+            if actually_applied > 0:
+                total_parsed += 1
+                total_tags += actually_applied
+                print(f"  ✓ Applied {actually_applied} tag(s) to meme id={meme_id}")
     
     conn.close()
     print(f"🏷️  Tag parsing complete: {total_parsed} memes tagged with {total_tags} total tags")
@@ -1179,8 +1185,9 @@ def process_meme(meme_id, file_path, media_type):
             print(f"🤖 Suggested tags: {', '.join(suggested_names)}")
             tag_ids, applied_names, unknown_names = _map_tag_names_to_ids(suggested_names)
             if applied_names:
-                print(f"🏷️ Applying tags: {', '.join(applied_names)}")
-                apply_tags_to_meme(meme_id, tag_ids)
+                actually_applied = apply_tags_to_meme(meme_id, tag_ids)
+                if actually_applied > 0:
+                    print(f"🏷️ Applied {actually_applied} tag(s): {', '.join(applied_names)}")
             if unknown_names:
                 print(f"⚠️ Ignored unknown/unavailable tags: {', '.join(unknown_names)}")
 
@@ -1200,9 +1207,9 @@ def process_meme(meme_id, file_path, media_type):
                 conn_tags.close()
             except Exception:
                 names = []
-            if names:
-                print(f"📄 Filename tags: {', '.join(names)}")
-            apply_tags_to_meme(meme_id, filename_tag_ids)
+            actually_applied = apply_tags_to_meme(meme_id, filename_tag_ids)
+            if actually_applied > 0 and names:
+                print(f"📄 Applied {actually_applied} filename tag(s): {', '.join(names)}")
 
         # Final commit (noop if nothing changed)
         conn.commit()
