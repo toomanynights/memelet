@@ -13,6 +13,7 @@ from PIL import Image
 import os
 import shutil
 import cv2
+import hashlib
 
 DB_PATH = "memelet.db"
 MEMES_DIR = "/home/basil/memes/files"
@@ -344,6 +345,9 @@ def _ensure_schema_migrations():
         if 'file_size' not in cols:
             cursor.execute("ALTER TABLE memes ADD COLUMN file_size INTEGER")
             conn.commit()
+        if 'file_hash' not in cols:
+            cursor.execute("ALTER TABLE memes ADD COLUMN file_hash TEXT")
+            conn.commit()
     except Exception:
         # Non-fatal; continue without blocking scan
         pass
@@ -356,9 +360,23 @@ def _get_file_size(path_str: str):
     except Exception:
         return None
 
-def _relocate_by_name_and_size(filename: str, size: int):
-    """Search MEMES_DIR for a file matching filename and size. Return absolute path or None."""
-    if not size:
+def _get_file_hash(path_str: str):
+    """Compute SHA256 hash of file contents."""
+    try:
+        sha256_hash = hashlib.sha256()
+        with open(path_str, "rb") as f:
+            # Read in chunks to handle large files
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+    except Exception:
+        return None
+
+def _relocate_by_name_and_hash(filename: str, file_hash: str):
+    """Search MEMES_DIR for a file matching filename and hash. 
+    First tries to find by filename (fast), then falls back to hash-only search (slower).
+    Return absolute path or None."""
+    if not file_hash:
         return None
     base = Path(MEMES_DIR)
     if not base.exists():
@@ -370,6 +388,7 @@ def _relocate_by_name_and_size(filename: str, size: int):
     excluded_dirs = {'thumbnails', 'temp'}
     excluded_suffixes = {'_thumb.jpg', '_preview.gif'}
 
+    # First attempt: Fast search by filename, then verify hash
     candidates = []
     for f in base.rglob(filename):
         try:
@@ -381,14 +400,36 @@ def _relocate_by_name_and_size(filename: str, size: int):
                 continue
             if any(f.name.endswith(suf) for suf in excluded_suffixes):
                 continue
-            if os.path.getsize(f) == size:
+            if _get_file_hash(str(f)) == file_hash:
                 candidates.append(str(f.resolve()))
         except Exception:
             continue
-    # Prefer first match
-    return candidates[0] if candidates else None
+    
+    if candidates:
+        return candidates[0]
+    
+    # Second attempt: Slower hash-only search (for renamed files)
+    # Only search if filename search failed
+    print(f"  → Filename search failed, trying hash-only search for {filename}")
+    for f in base.rglob('*'):
+        try:
+            if not f.is_file():
+                continue
+            if f.suffix.lower() not in all_extensions:
+                continue
+            if any(part in excluded_dirs for part in f.parts):
+                continue
+            if any(f.name.endswith(suf) for suf in excluded_suffixes):
+                continue
+            if _get_file_hash(str(f)) == file_hash:
+                print(f"  ✓ Found by hash: {f.name}")
+                return str(f.resolve())
+        except Exception:
+            continue
+    
+    return None
 
-def _verify_existing_files_and_store_sizes():
+def _verify_existing_files_and_store_hashes():
     """Before scanning for new memes, verify DB file paths exist; relocate or mark error.
     Returns summary dict with counts.
     """
@@ -396,47 +437,47 @@ def _verify_existing_files_and_store_sizes():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # First, ensure album_items has file_size column
+    # First, ensure album_items has file_hash column
     try:
         cursor.execute("PRAGMA table_info(album_items)")
         cols = {row[1] for row in cursor.fetchall()}
-        if 'file_size' not in cols:
-            cursor.execute("ALTER TABLE album_items ADD COLUMN file_size INTEGER")
+        if 'file_hash' not in cols:
+            cursor.execute("ALTER TABLE album_items ADD COLUMN file_hash TEXT")
             conn.commit()
     except Exception:
         pass
     
-    cursor.execute("SELECT id, file_path, media_type, status, file_size FROM memes")
+    cursor.execute("SELECT id, file_path, media_type, status, file_hash FROM memes")
     rows = cursor.fetchall()
     total = len(rows)
     ok = 0
-    sized = 0
+    hashed = 0
     relocated = 0
     marked_error = 0
     albums = 0
     albums_ok = 0
 
-    for meme_id, file_path, media_type, status, file_size in rows:
+    for meme_id, file_path, media_type, status, file_hash in rows:
         # Albums: verify items; mark album error if any item missing
         if media_type == 'album':
             albums += 1
             cursor.execute("""
-                SELECT file_path, file_size FROM album_items
+                SELECT file_path, file_hash FROM album_items
                 WHERE album_id = ?
                 ORDER BY display_order
             """, (meme_id,))
-            item_paths_sizes = cursor.fetchall()
+            item_paths_hashes = cursor.fetchall()
             
             # Check each album item
             any_missing = False
             any_relocated = False
-            any_sized = False
+            any_hashed = False
             
-            for item_path, item_size in item_paths_sizes:
+            for item_path, item_hash in item_paths_hashes:
                 if not os.path.exists(item_path):
                     # Missing item → try to relocate
                     filename = Path(item_path).name
-                    new_path = _relocate_by_name_and_size(filename, item_size) if item_size else None
+                    new_path = _relocate_by_name_and_hash(filename, item_hash) if item_hash else None
                     
                     if new_path:
                         # Update the item path
@@ -452,16 +493,16 @@ def _verify_existing_files_and_store_sizes():
                         any_missing = True
                         break
                 else:
-                    # File exists; store size if missing
-                    if item_size is None:
-                        size = _get_file_size(item_path)
-                        if size is not None:
+                    # File exists; store hash if missing
+                    if item_hash is None:
+                        hash_val = _get_file_hash(item_path)
+                        if hash_val is not None:
                             cursor.execute("""
-                                UPDATE album_items SET file_size=?
+                                UPDATE album_items SET file_hash=?
                                 WHERE album_id=? AND file_path=?
-                            """, (size, meme_id, item_path))
-                            print(f"✓ Stored size {size} for album item (album_id={meme_id})")
-                            any_sized = True
+                            """, (hash_val, meme_id, item_path))
+                            print(f"✓ Stored hash for album item (album_id={meme_id})")
+                            any_hashed = True
             
             if any_missing:
                 cursor.execute("""
@@ -474,41 +515,41 @@ def _verify_existing_files_and_store_sizes():
             else:
                 ok += 1
                 albums_ok += 1
-                if any_sized:
-                    sized += 1
+                if any_hashed:
+                    hashed += 1
                 if any_relocated:
                     relocated += 1
             continue
 
         # Non-album media
         if os.path.exists(file_path):
-            # Store size if missing
-            if file_size is None:
-                size = _get_file_size(file_path)
-                if size is not None:
+            # Store hash if missing
+            if file_hash is None:
+                hash_val = _get_file_hash(file_path)
+                if hash_val is not None:
                     cursor.execute(
-                        "UPDATE memes SET file_size=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                        (size, meme_id),
+                        "UPDATE memes SET file_hash=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (hash_val, meme_id),
                     )
-                    sized += 1
-                    print(f"✓ Stored size {size} for id={meme_id}")
+                    hashed += 1
+                    print(f"✓ Stored hash for id={meme_id}")
             ok += 1
             continue
 
             
-        # Missing file → attempt relocation if we have size; if not, mark error
-        size_for_search = file_size
-        if size_for_search is None:
-            print(f"✗ Missing file with no stored size → marking error (id={meme_id})")
+        # Missing file → attempt relocation if we have hash; if not, mark error
+        hash_for_search = file_hash
+        if hash_for_search is None:
+            print(f"✗ Missing file with no stored hash → marking error (id={meme_id})")
             cursor.execute(
                 "UPDATE memes SET status='error', error_message=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                ("File missing; no stored size to relocate", meme_id),
+                ("File missing; no stored hash to relocate", meme_id),
             )
             marked_error += 1
             continue
 
         filename = Path(file_path).name
-        new_path = _relocate_by_name_and_size(filename, size_for_search)
+        new_path = _relocate_by_name_and_hash(filename, hash_for_search)
         if new_path:
             cursor.execute(
                 "UPDATE memes SET file_path=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -526,11 +567,11 @@ def _verify_existing_files_and_store_sizes():
 
     conn.commit()
     conn.close()
-    print(f"Pre-scan check: total={total}, ok={ok} (albums={albums}, albums_ok={albums_ok}), sized={sized}, relocated={relocated}, errors={marked_error}")
+    print(f"Pre-scan check: total={total}, ok={ok} (albums={albums}, albums_ok={albums_ok}), hashed={hashed}, relocated={relocated}, errors={marked_error}")
     return {
         'total': total,
         'ok': ok,
-        'sized': sized,
+        'hashed': hashed,
         'relocated': relocated,
         'errors': marked_error,
         'albums': albums,
@@ -638,7 +679,7 @@ def _map_tag_names_to_ids(tag_names):
 def scan_and_add_new_files():
     """Scan memes directory and add new files to database"""
     # Verify existing records and attempt relocations before scanning for new memes
-    _verify_existing_files_and_store_sizes()
+    _verify_existing_files_and_store_hashes()
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -682,37 +723,39 @@ def scan_and_add_new_files():
         # Check if file already exists in database
         cursor.execute("SELECT id FROM memes WHERE file_path = ?", (file_path,))
         if cursor.fetchone() is None:
-            # Get file size and check for duplicates by name+size
+            # Get file hash and check for duplicates by name+hash
             filename = media_file.name
-            size = _get_file_size(file_path)
+            file_hash = _get_file_hash(file_path)
             
             # Check for duplicates
-            if size is not None:
-                # Check if another meme has the same filename and size
+            if file_hash is not None:
+                # Check if another meme has the same hash (content-based duplicate detection)
                 cursor.execute(
-                    "SELECT id FROM memes WHERE file_size = ? AND file_path LIKE ? LIMIT 1",
-                    (size, f"%{filename}")
+                    "SELECT id, file_path FROM memes WHERE file_hash = ? LIMIT 1",
+                    (file_hash,)
                 )
                 duplicate = cursor.fetchone()
                 
                 if duplicate:
                     # Found a duplicate - add it as an error
+                    duplicate_id = duplicate[0]
+                    duplicate_path = Path(duplicate[1]).name if duplicate[1] else "unknown"
                     cursor.execute(
-                        "INSERT INTO memes (file_path, media_type, status, file_size, error_message) VALUES (?, ?, 'error', ?, ?)",
-                        (file_path, media_type, size, f"Duplicate of meme {duplicate[0]}")
+                        "INSERT INTO memes (file_path, media_type, status, file_hash, error_message) VALUES (?, ?, 'error', ?, ?)",
+                        (file_path, media_type, file_hash, f"Duplicate of meme {duplicate_id} ({duplicate_path})")
                     )
                     new_count += 1
-                    print(f"⚠️ Duplicate: {filename} (matches meme {duplicate[0]})")
+                    print(f"⚠️ Duplicate: {filename} (matches meme {duplicate_id}: {duplicate_path})")
                 else:
                     # No duplicate - add normally
                     cursor.execute(
-                        "INSERT INTO memes (file_path, media_type, status, file_size) VALUES (?, ?, 'new', ?)",
-                        (file_path, media_type, size)
+                        "INSERT INTO memes (file_path, media_type, status, file_hash) VALUES (?, ?, 'new', ?)",
+                        (file_path, media_type, file_hash)
                     )
                     new_count += 1
                     print(f"➕ Added: {filename} ({media_type})")
             else:
-                # No size available - just add normally
+                # No hash available - just add normally
                 cursor.execute(
                     "INSERT INTO memes (file_path, media_type, status) VALUES (?, ?, 'new')",
                     (file_path, media_type)
@@ -776,11 +819,11 @@ def scan_albums(cursor, albums_path, image_extensions):
         # Register each file in album_items table
         for order, album_file in enumerate(album_files, start=1):
             file_path = str(album_file.resolve())
-            file_size = _get_file_size(file_path)
-            if file_size is not None:
+            file_hash = _get_file_hash(file_path)
+            if file_hash is not None:
                 cursor.execute(
-                    "INSERT INTO album_items (album_id, file_path, display_order, file_size) VALUES (?, ?, ?, ?)",
-                    (album_id, file_path, order, file_size)
+                    "INSERT INTO album_items (album_id, file_path, display_order, file_hash) VALUES (?, ?, ?, ?)",
+                    (album_id, file_path, order, file_hash)
                 )
             else:
                 cursor.execute(
@@ -1231,14 +1274,14 @@ def process_pending_memes(include_errors=False):
     for meme_id, file_path, media_type in pending_memes:
         # If retrying errors, validate file existence and try relocation before processing
         if include_errors:
-            # Fetch current status and size
+            # Fetch current status and hash
             conn2 = get_db_connection()
             cur2 = conn2.cursor()
-            cur2.execute("SELECT status, file_size FROM memes WHERE id=?", (meme_id,))
+            cur2.execute("SELECT status, file_hash FROM memes WHERE id=?", (meme_id,))
             row = cur2.fetchone()
             conn2.close()
             status = row[0] if row else None
-            file_size = row[1] if row else None
+            file_hash = row[1] if row else None
 
             if media_type == 'album':
                 # Check album items exist; if OK proceed, else leave as error and continue
@@ -1253,7 +1296,7 @@ def process_pending_memes(include_errors=False):
             else:
                 if not os.path.exists(file_path):
                     filename = Path(file_path).name
-                    new_path = _relocate_by_name_and_size(filename, file_size) if file_size else None
+                    new_path = _relocate_by_name_and_hash(filename, file_hash) if file_hash else None
                     if new_path:
                         conn_fix = get_db_connection()
                         cur_fix = conn_fix.cursor()
