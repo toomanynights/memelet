@@ -23,6 +23,19 @@
     const QUIP_RANDOM_CHANCE = 0.25; // 25% chance (>75% threshold)
     
     /**
+     * Expose constants globally for use in other modules (e.g., debug tools)
+     */
+    window.ClippyConstants = {
+        SESSION_KEY: SESSION_KEY,
+        SESSION_DURATION: SESSION_DURATION,
+        QUIP_LAST_TIME_KEY: QUIP_LAST_TIME_KEY,
+        QUIP_PAGE_COUNT_KEY: QUIP_PAGE_COUNT_KEY,
+        QUIP_MIN_TIME: QUIP_MIN_TIME,
+        QUIP_MIN_PAGES: QUIP_MIN_PAGES,
+        QUIP_RANDOM_CHANCE: QUIP_RANDOM_CHANCE
+    };
+    
+    /**
      * Detect which page we're currently on
      * @returns {string} Page identifier ('meme_detail', 'index', 'search', 'settings', 'tags')
      */
@@ -42,6 +55,12 @@
             return 'index';
         }
     }
+    
+    /**
+     * Detect which page we're currently on (exposed globally)
+     * @returns {string} Page identifier ('meme_detail', 'index', 'search', 'settings', 'tags')
+     */
+    window.detectCurrentPage = detectCurrentPage;
     
     /**
      * Get appropriate quip categories for current page
@@ -193,10 +212,10 @@
                     lastActiveState = currentActive;
                 }, 100);
                 
-                // Clear interval after reasonable timeout (e.g., 60 seconds for long messages)
+                // Clear interval after reasonable timeout (e.g., 30 seconds for long messages)
                 setTimeout(function() {
                     clearInterval(checkInterval);
-                }, 60000);
+                }, 30000);
             }, 50);
             
             return result;
@@ -450,7 +469,7 @@
                 setTimeout(function() {
                     // Use phrase loading from clippy-phrases.js
                     window.loadClippyPhrases().then(function() {
-                        const welcomePhrase = window.getRandomClippyPhrase(['welcome', 'random']);
+                        const welcomePhrase = window.getRandomClippyPhrase('welcome');
                         agent.speak(welcomePhrase);
                         // Welcome speech counts as a quip
                         recordQuip();

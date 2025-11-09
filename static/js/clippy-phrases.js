@@ -83,57 +83,9 @@
             return { phrase: phrase, needsReroll: false };
         }
         
-        const now = new Date();
-        let needsReroll = false;
-        
-        // Define placeholder replacements
-        const placeholders = {
-            'weekday': function() {
-                const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                return days[now.getDay()];
-            },
-            'date': function() {
-                return now.toLocaleDateString();
-            },
-            'time': function() {
-                return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            },
-            'month': function() {
-                const months = ['January', 'February', 'March', 'April', 'May', 'June', 
-                               'July', 'August', 'September', 'October', 'November', 'December'];
-                return months[now.getMonth()];
-            },
-            'year': function() {
-                return now.getFullYear().toString();
-            },
-            'day': function() {
-                return now.getDate().toString();
-            },
-            'memes': function() {
-                const count = getStatBadgeNumber('total');
-                if (count === null || count === 0) {
-                    needsReroll = true;
-                    return '0';
-                }
-                return count.toString();
-            },
-            'errors': function() {
-                const count = getStatBadgeNumber('error');
-                if (count === null || count === 0) {
-                    needsReroll = true;
-                    return '0';
-                }
-                return count.toString();
-            },
-            'found': function() {
-                const count = getSearchResultsCount();
-                if (count === null || count === 0) {
-                    needsReroll = true;
-                    return '0';
-                }
-                return count.toString();
-            }
-        };
+        // Get placeholder definitions from the single source
+        const defs = getPlaceholderDefinitions();
+        const placeholders = defs.placeholders;
         
         // Replace all placeholders in the phrase
         let processedPhrase = phrase;
@@ -144,7 +96,7 @@
             }
         }
         
-        return { phrase: processedPhrase, needsReroll: needsReroll };
+        return { phrase: processedPhrase, needsReroll: defs.needsReroll() };
     }
     
     /**
@@ -237,6 +189,67 @@
     window.loadClippyPhrases = loadClippyPhrases;
     
     /**
+     * Get placeholder definitions
+     * @returns {Object} Placeholder functions
+     */
+    function getPlaceholderDefinitions() {
+        const now = new Date();
+        let needsReroll = false;
+        
+        return {
+            placeholders: {
+                'weekday': function() {
+                    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                    return days[now.getDay()];
+                },
+                'date': function() {
+                    return now.toLocaleDateString();
+                },
+                'time': function() {
+                    return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                },
+                'month': function() {
+                    const months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                                   'July', 'August', 'September', 'October', 'November', 'December'];
+                    return months[now.getMonth()];
+                },
+                'year': function() {
+                    return now.getFullYear().toString();
+                },
+                'day': function() {
+                    return now.getDate().toString();
+                },
+                'memes': function() {
+                    const count = getStatBadgeNumber('total');
+                    if (count === null || count === 0) {
+                        needsReroll = true;
+                        return '0';
+                    }
+                    return count.toString();
+                },
+                'errors': function() {
+                    const count = getStatBadgeNumber('error');
+                    if (count === null || count === 0) {
+                        needsReroll = true;
+                        return '0';
+                    }
+                    return count.toString();
+                },
+                'found': function() {
+                    const count = getSearchResultsCount();
+                    if (count === null || count === 0) {
+                        needsReroll = true;
+                        return '0';
+                    }
+                    return count.toString();
+                }
+            },
+            needsReroll: function() { return needsReroll; },
+            setNeedsReroll: function(value) { needsReroll = value; }
+        };
+    }
+    
+    /**
      * Process phrase placeholders (exposed for internal use)
      * @param {string} phrase - Phrase with placeholders
      * @returns {string} Processed phrase
@@ -252,5 +265,15 @@
      * @returns {string} Random phrase
      */
     window.getRandomClippyPhrase = getRandomPhrase;
+    
+    /**
+     * Get list of available placeholder keys (exposed for debug tools)
+     * Extracts keys directly from the placeholder definitions
+     * @returns {string[]} Array of placeholder keys
+     */
+    window.getAvailablePlaceholders = function() {
+        const defs = getPlaceholderDefinitions();
+        return Object.keys(defs.placeholders);
+    };
 })();
 
