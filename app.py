@@ -103,6 +103,12 @@ def login():
 def logout():
     """Logout user"""
     logout_user()
+    
+    # In public mode, redirect to index instead of login
+    if is_public_mode():
+        return redirect(url_for('index'))
+    
+    # In private mode, redirect to login page
     return redirect(url_for('login'))
 
 def get_db_connection():
