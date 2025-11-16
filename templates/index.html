@@ -344,6 +344,34 @@
             }
         });
         
+        // Close modals on Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape' || event.keyCode === 27) {
+                // Close upload modal if open
+                const uploadModal = document.getElementById('uploadModal');
+                if (uploadModal && uploadModal.classList.contains('active')) {
+                    closeUploadModal();
+                    event.preventDefault();
+                    return;
+                }
+                
+                // Close tag modal if open
+                const tagModal = document.getElementById('tagModal');
+                if (tagModal && tagModal.classList.contains('active')) {
+                    closeTagModal();
+                    event.preventDefault();
+                    return;
+                }
+                
+                // Close dropdown menu if open
+                const menu = document.getElementById('dropdownMenu');
+                if (menu && menu.classList.contains('active')) {
+                    menu.classList.remove('active');
+                    event.preventDefault();
+                }
+            }
+        });
+        
         // Upload Modal State
         let uploadMode = 'single';
         let selectedFiles = [];
