@@ -60,10 +60,14 @@
             <div class="api-key-form">
                 <input type="password" id="api-key-input" placeholder="Enter your Replicate API key" style="width: 400px; max-width: 100%; padding: 10px; font-family: monospace; font-size: 0.9rem;">
                 <button type="button" class="btn btn-primary" onclick="saveApiKey()" style="margin-left: 10px;">💾 Save API Key</button>
-                <button type="button" class="btn" onclick="toggleApiKeyVisibility()" style="margin-left: 5px;">👁️ Show/Hide</button>
+                <button type="button" class="btn" id="show-hide-btn" onclick="toggleApiKeyVisibility()" style="margin-left: 5px; display: none;">👁️ Show/Hide</button>
+                <button type="button" class="btn" onclick="clearApiKey()" style="margin-left: 5px;">🗑️ Clear</button>
             </div>
             <div id="api-key-status" style="margin-top: 10px; font-size: 0.9rem;"></div>
             <div id="api-key-message" style="margin-top: 10px;"></div>
+            <p style="margin-top: 10px; font-size: 0.85rem; color: #666;">
+                <strong>Note:</strong> For security, saved API keys are masked and cannot be retrieved. To change the key, clear the field and enter a new one.
+            </p>
         </div>
         
         <div class="section">
@@ -213,6 +217,7 @@
     <!-- API Key Management Script -->
     <script>
         let currentApiKey = '';
+        let hasExistingKey = false;
         
         // Load current API key on page load
         function loadApiKey() {
@@ -221,14 +226,21 @@
                 .then(data => {
                     if (data.success) {
                         const statusEl = document.getElementById('api-key-status');
+                        const inputEl = document.getElementById('api-key-input');
                         if (data.has_key) {
+                            hasExistingKey = true;
                             currentApiKey = data.api_key;
-                            document.getElementById('api-key-input').value = data.api_key;
+                            inputEl.value = data.api_key;
+                            inputEl.disabled = true;
+                            inputEl.style.opacity = '0.7';
                             statusEl.innerHTML = '✅ API key is configured (masked for security)';
                             statusEl.style.color = '#2ecc71';
                         } else {
+                            hasExistingKey = false;
                             statusEl.innerHTML = '⚠️ No API key configured';
                             statusEl.style.color = '#e74c3c';
+                            inputEl.disabled = false;
+                            inputEl.style.opacity = '1';
                         }
                     }
                 })
@@ -237,8 +249,29 @@
                 });
         }
         
+        function clearApiKey() {
+            const inputEl = document.getElementById('api-key-input');
+            const showHideBtn = document.getElementById('show-hide-btn');
+            
+            inputEl.value = '';
+            inputEl.disabled = false;
+            inputEl.style.opacity = '1';
+            inputEl.type = 'password';
+            inputEl.focus();
+            
+            // Show the show/hide button when entering a new key
+            showHideBtn.style.display = 'inline-block';
+            
+            const statusEl = document.getElementById('api-key-status');
+            if (hasExistingKey) {
+                statusEl.innerHTML = '📝 Ready to enter new API key';
+                statusEl.style.color = '#f39c12';
+            }
+        }
+        
         function saveApiKey() {
             const apiKey = document.getElementById('api-key-input').value.trim();
+            const showHideBtn = document.getElementById('show-hide-btn');
             
             if (!apiKey) {
                 const msgEl = document.getElementById('api-key-message');
@@ -250,7 +283,7 @@
             // Don't save if it's the masked version
             if (apiKey.startsWith('•')) {
                 const msgEl = document.getElementById('api-key-message');
-                msgEl.innerHTML = '<div class="message error">Please enter a new API key or clear the field to update</div>';
+                msgEl.innerHTML = '<div class="message error">Please clear the field first to enter a new key</div>';
                 setTimeout(() => msgEl.innerHTML = '', 3000);
                 return;
             }
@@ -266,6 +299,9 @@
                     const msgEl = document.getElementById('api-key-message');
                     msgEl.innerHTML = '<div class="message success">API key saved successfully!</div>';
                     setTimeout(() => msgEl.innerHTML = '', 3000);
+                    
+                    // Hide show/hide button again
+                    showHideBtn.style.display = 'none';
                     
                     // Reload to show masked version
                     loadApiKey();
@@ -291,8 +327,22 @@
             }
         }
         
-        // Load API key when page loads
-        window.addEventListener('DOMContentLoaded', loadApiKey);
+        // Show/hide the show/hide button when user types
+        document.addEventListener('DOMContentLoaded', function() {
+            loadApiKey();
+            
+            const inputEl = document.getElementById('api-key-input');
+            const showHideBtn = document.getElementById('show-hide-btn');
+            
+            inputEl.addEventListener('input', function() {
+                // Only show the button if field is not disabled and has content
+                if (!this.disabled && this.value.length > 0) {
+                    showHideBtn.style.display = 'inline-block';
+                } else {
+                    showHideBtn.style.display = 'none';
+                }
+            });
+        });
     </script>
     
     <!-- Agent Selector Script -->
