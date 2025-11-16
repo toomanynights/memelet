@@ -20,10 +20,15 @@
     <div class="container">
         <header>
             <div class="header-buttons left">
-                <a href="/tags" class="header-button tags" title="Manage Tags">🏷️</a>
+                <button class="header-button upload" title="Upload Memes" onclick="openUploadModal()">📤</button>
             </div>
             <div class="header-buttons right">
-                <a href="/settings" class="header-button settings" title="Settings">⚙️</a>
+                <button class="header-button menu" title="Menu" onclick="toggleDropdownMenu()">⋮</button>
+                <div class="dropdown-menu" id="dropdownMenu">
+                    <a href="/settings"><span class="dropdown-icon">⚙️</span> Settings</a>
+                    <a href="/tags"><span class="dropdown-icon">🏷️</span> Tags</a>
+                    <a href="#" onclick="event.preventDefault(); openUploadModal();"><span class="dropdown-icon">📤</span> Upload</a>
+                </div>
             </div>
             <h1><img src="{{ url_for('static', filename='logo.png') }}" alt="Memelet" style="height: 1.2em; vertical-align: -0.2em;"> Memelet</h1>
             <p>Because memes are happiness</p>
@@ -258,6 +263,349 @@
             </div>
         </div>
     </div>
+    
+    <!-- Upload Modal -->
+    <div id="uploadModal" class="modal upload-modal">
+        <div class="modal-content">
+            <div class="modal-header">Upload Memes</div>
+            
+            <!-- Mode Selector -->
+            <div class="mode-selector">
+                <div class="mode-option selected" onclick="selectUploadMode('single')" id="modeSingle">
+                    <div class="mode-option-icon">🖼️</div>
+                    <div class="mode-option-title">Single Meme</div>
+                    <div class="mode-option-desc">Upload images, videos, or GIFs</div>
+                </div>
+                <div class="mode-option" onclick="selectUploadMode('album')" id="modeAlbum">
+                    <div class="mode-option-icon">📚</div>
+                    <div class="mode-option-title">Album</div>
+                    <div class="mode-option-desc">Upload multiple images as an album</div>
+                </div>
+            </div>
+            
+            <!-- File Upload Area -->
+            <div class="file-upload-area" id="fileUploadArea">
+                <div class="file-upload-icon">📁</div>
+                <label for="fileInput" class="file-upload-label">Choose Files</label>
+                <input type="file" id="fileInput" class="file-upload-input" multiple accept=".jpg,.jpeg,.png,.webp,.bmp,.gif,.mp4,.webm,.mov,.avi" onchange="handleFileSelect(event)">
+                <div class="file-upload-hint" id="fileUploadHint">
+                    Drag and drop files here or click to browse<br>
+                    <small id="fileTypeHint">Accepted: Images, GIFs, Videos</small>
+                </div>
+            </div>
+            
+            <!-- Selected Files List -->
+            <div class="selected-files" id="selectedFilesContainer" style="display: none;">
+                <div class="selected-files-title">Selected Files (<span id="fileCount">0</span>)</div>
+                <div class="file-list" id="fileList"></div>
+            </div>
+            
+            <!-- Upload Progress -->
+            <div class="upload-progress" id="uploadProgress">
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progressBar" style="width: 0%;">0%</div>
+                </div>
+                <div class="upload-status" id="uploadStatus">Uploading...</div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="closeUploadModal()" id="uploadCancelBtn" style="flex: 1;">Cancel</button>
+                <button class="btn btn-primary" onclick="startUpload()" id="uploadBtn" style="flex: 1;" disabled>Upload</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Dropdown menu functionality
+        function toggleDropdownMenu() {
+            const menu = document.getElementById('dropdownMenu');
+            menu.classList.toggle('active');
+        }
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const menu = document.getElementById('dropdownMenu');
+            const menuButton = document.querySelector('.header-button.menu');
+            
+            if (menu && !menu.contains(event.target) && event.target !== menuButton) {
+                menu.classList.remove('active');
+            }
+        });
+        
+        // Upload Modal State
+        let uploadMode = 'single';
+        let selectedFiles = [];
+        
+        function openUploadModal() {
+            document.getElementById('uploadModal').classList.add('active');
+            // Close dropdown if open
+            document.getElementById('dropdownMenu').classList.remove('active');
+            // Reset state
+            selectedFiles = [];
+            updateFileList();
+            document.getElementById('uploadProgress').classList.remove('active');
+            document.getElementById('uploadBtn').disabled = true;
+        }
+        
+        function closeUploadModal() {
+            document.getElementById('uploadModal').classList.remove('active');
+            selectedFiles = [];
+            document.getElementById('fileInput').value = '';
+            updateFileList();
+        }
+        
+        function selectUploadMode(mode) {
+            uploadMode = mode;
+            
+            // Update UI
+            document.getElementById('modeSingle').classList.toggle('selected', mode === 'single');
+            document.getElementById('modeAlbum').classList.toggle('selected', mode === 'album');
+            
+            // Update file input accept attribute
+            const fileInput = document.getElementById('fileInput');
+            const fileTypeHint = document.getElementById('fileTypeHint');
+            
+            if (mode === 'album') {
+                fileInput.accept = '.jpg,.jpeg,.png,.webp,.bmp';
+                fileTypeHint.textContent = 'Accepted: Images only (JPG, PNG, WEBP, BMP)';
+            } else {
+                fileInput.accept = '.jpg,.jpeg,.png,.webp,.bmp,.gif,.mp4,.webm,.mov,.avi';
+                fileTypeHint.textContent = 'Accepted: Images, GIFs, Videos';
+            }
+            
+            // Clear selected files when switching modes
+            selectedFiles = [];
+            document.getElementById('fileInput').value = '';
+            updateFileList();
+        }
+        
+        function handleFileSelect(event) {
+            const files = Array.from(event.target.files);
+            
+            // Validate file types based on mode
+            const validFiles = files.filter(file => {
+                if (uploadMode === 'album') {
+                    // Only images for albums
+                    return file.type.match(/^image\/(jpeg|jpg|png|webp|bmp)$/);
+                } else {
+                    // Images, GIFs, and videos for single mode
+                    return file.type.match(/^image\//) || file.type.match(/^video\//);
+                }
+            });
+            
+            if (validFiles.length !== files.length) {
+                alert(`${files.length - validFiles.length} file(s) were rejected due to invalid file type for selected mode.`);
+            }
+            
+            selectedFiles = validFiles;
+            updateFileList();
+        }
+        
+        function updateFileList() {
+            const container = document.getElementById('selectedFilesContainer');
+            const fileList = document.getElementById('fileList');
+            const fileCount = document.getElementById('fileCount');
+            const uploadBtn = document.getElementById('uploadBtn');
+            
+            if (selectedFiles.length === 0) {
+                container.style.display = 'none';
+                uploadBtn.disabled = true;
+                return;
+            }
+            
+            container.style.display = 'block';
+            fileCount.textContent = selectedFiles.length;
+            
+            fileList.innerHTML = '';
+            selectedFiles.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                
+                const icon = getFileIcon(file.type);
+                const size = formatFileSize(file.size);
+                
+                fileItem.innerHTML = `
+                    <span class="file-item-icon">${icon}</span>
+                    <span class="file-item-name" title="${file.name}">${file.name}</span>
+                    <span class="file-item-size">${size}</span>
+                    <button class="file-item-remove" onclick="removeFile(${index})" title="Remove">×</button>
+                `;
+                
+                fileList.appendChild(fileItem);
+            });
+            
+            uploadBtn.disabled = false;
+        }
+        
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFileList();
+        }
+        
+        function getFileIcon(mimeType) {
+            if (mimeType.startsWith('image/')) {
+                if (mimeType === 'image/gif') return '🎬';
+                return '🖼️';
+            } else if (mimeType.startsWith('video/')) {
+                return '🎥';
+            }
+            return '📄';
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+        
+        // Drag and drop support
+        const fileUploadArea = document.getElementById('fileUploadArea');
+        
+        fileUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.add('dragover');
+        });
+        
+        fileUploadArea.addEventListener('dragleave', () => {
+            fileUploadArea.classList.remove('dragover');
+        });
+        
+        fileUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.remove('dragover');
+            
+            const files = Array.from(e.dataTransfer.files);
+            
+            // Validate file types based on mode
+            const validFiles = files.filter(file => {
+                if (uploadMode === 'album') {
+                    return file.type.match(/^image\/(jpeg|jpg|png|webp|bmp)$/);
+                } else {
+                    return file.type.match(/^image\//) || file.type.match(/^video\//);
+                }
+            });
+            
+            if (validFiles.length !== files.length) {
+                alert(`${files.length - validFiles.length} file(s) were rejected due to invalid file type for selected mode.`);
+            }
+            
+            selectedFiles = validFiles;
+            updateFileList();
+        });
+        
+        function startUpload() {
+            if (selectedFiles.length === 0) {
+                alert('Please select at least one file');
+                return;
+            }
+            
+            // Show progress
+            document.getElementById('uploadProgress').classList.add('active');
+            document.getElementById('uploadBtn').disabled = true;
+            document.getElementById('uploadCancelBtn').disabled = true;
+            
+            // Create FormData
+            const formData = new FormData();
+            formData.append('mode', uploadMode);
+            
+            selectedFiles.forEach((file, index) => {
+                formData.append('files', file);
+            });
+            
+            // Upload with progress tracking
+            const xhr = new XMLHttpRequest();
+            
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percentComplete = Math.round((e.loaded / e.total) * 100);
+                    document.getElementById('progressBar').style.width = percentComplete + '%';
+                    document.getElementById('progressBar').textContent = percentComplete + '%';
+                }
+            });
+            
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 200) {
+                    const response = JSON.parse(xhr.responseText);
+                    if (response.success) {
+                        handleUploadSuccess(response);
+                    } else {
+                        handleUploadError(response.error || 'Upload failed');
+                    }
+                } else {
+                    handleUploadError('Upload failed with status ' + xhr.status);
+                }
+            });
+            
+            xhr.addEventListener('error', () => {
+                handleUploadError('Network error during upload');
+            });
+            
+            xhr.open('POST', '/api/upload', true);
+            xhr.send(formData);
+            
+            document.getElementById('uploadStatus').textContent = 'Uploading files...';
+            document.getElementById('uploadStatus').className = 'upload-status';
+        }
+        
+        function handleUploadSuccess(response) {
+            document.getElementById('progressBar').style.width = '100%';
+            document.getElementById('progressBar').textContent = '100%';
+            document.getElementById('uploadStatus').textContent = 'Processing memes...';
+            document.getElementById('uploadStatus').className = 'upload-status processing';
+            
+            // Start polling for processing status
+            pollProcessingStatus(response.meme_ids);
+        }
+        
+        function pollProcessingStatus(memeIds) {
+            let completedCount = 0;
+            const totalCount = memeIds.length;
+            
+            const checkStatus = () => {
+                Promise.all(memeIds.map(id => 
+                    fetch(`/api/memes/${id}?t=${Date.now()}`, { cache: 'no-store' })
+                        .then(r => r.json())
+                )).then(responses => {
+                    completedCount = responses.filter(r => 
+                        r.success && (r.meme.status === 'done' || r.meme.status === 'error')
+                    ).length;
+                    
+                    document.getElementById('uploadStatus').textContent = 
+                        `Processing: ${completedCount}/${totalCount} completed`;
+                    
+                    if (completedCount === totalCount) {
+                        // All done!
+                        document.getElementById('uploadStatus').textContent = 'Upload complete!';
+                        document.getElementById('uploadStatus').className = 'upload-status success';
+                        
+                        setTimeout(() => {
+                            closeUploadModal();
+                            
+                            // Redirect based on count
+                            if (memeIds.length === 1) {
+                                window.location.href = `/meme/${memeIds[0]}`;
+                            } else {
+                                window.location.href = '/';
+                            }
+                        }, 1500);
+                    } else {
+                        // Keep polling
+                        setTimeout(checkStatus, 2000);
+                    }
+                });
+            };
+            
+            checkStatus();
+        }
+        
+        function handleUploadError(error) {
+            document.getElementById('uploadStatus').textContent = 'Error: ' + error;
+            document.getElementById('uploadStatus').className = 'upload-status error';
+            document.getElementById('uploadBtn').disabled = false;
+            document.getElementById('uploadCancelBtn').disabled = false;
+        }
+    </script>
     
     <script>
         let initialFullTags = [];

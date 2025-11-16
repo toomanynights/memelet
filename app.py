@@ -3,14 +3,31 @@
 Memelet Web Interface
 """
 from flask import Flask, render_template, request, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
 from uuid import uuid4
 import sqlite3
 from pathlib import Path
+import os
+import hashlib
+import subprocess
+from datetime import datetime
 
 app = Flask(__name__)
 
 DB_PATH = "memelet.db"
 MEMES_URL_BASE = "https://memes.tmn.name/files/"
+FILES_DIR = Path("files")
+ALBUMS_DIR = FILES_DIR / "_albums"
+
+# Ensure directories exist
+FILES_DIR.mkdir(exist_ok=True)
+ALBUMS_DIR.mkdir(exist_ok=True)
+
+# File type validation
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
+GIF_EXTENSIONS = {'.gif'}
+VIDEO_EXTENSIONS = {'.mp4', '.webm', '.mov', '.avi'}
+ALL_MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | GIF_EXTENSIONS | VIDEO_EXTENSIONS
 
 @app.route('/favicon.ico')
 def favicon():
@@ -1344,6 +1361,234 @@ def set_replicate_api_key_setting():
     conn.close()
     
     return jsonify({'success': True, 'message': 'API key saved successfully'})
+
+def get_file_hash(file_path):
+    """Compute SHA256 hash of file contents"""
+    try:
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+    except Exception:
+        return None
+
+def get_unique_filename(directory, filename):
+    """Get a unique filename by appending numbers if file exists"""
+    file_path = Path(directory) / filename
+    if not file_path.exists():
+        return filename
+    
+    name_stem = file_path.stem
+    extension = file_path.suffix
+    counter = 1
+    
+    while True:
+        new_filename = f"{name_stem}_{counter}{extension}"
+        new_path = Path(directory) / new_filename
+        if not new_path.exists():
+            return new_filename
+        counter += 1
+
+def determine_media_type(filename):
+    """Determine media type from filename extension"""
+    ext = Path(filename).suffix.lower()
+    if ext in GIF_EXTENSIONS:
+        return 'gif'
+    elif ext in VIDEO_EXTENSIONS:
+        return 'video'
+    elif ext in IMAGE_EXTENSIONS:
+        return 'image'
+    return None
+
+@app.route('/api/upload', methods=['POST'])
+def upload_files():
+    """Handle file uploads"""
+    try:
+        # Get upload mode
+        mode = request.form.get('mode', 'single')
+        
+        if mode not in ['single', 'album']:
+            return jsonify({'success': False, 'error': 'Invalid upload mode'}), 400
+        
+        # Get uploaded files
+        files = request.files.getlist('files')
+        
+        if not files or len(files) == 0:
+            return jsonify({'success': False, 'error': 'No files provided'}), 400
+        
+        # Validate file types
+        for file in files:
+            if not file.filename:
+                continue
+            
+            ext = Path(file.filename).suffix.lower()
+            
+            if mode == 'album':
+                # Only images for albums
+                if ext not in IMAGE_EXTENSIONS:
+                    return jsonify({
+                        'success': False, 
+                        'error': f'Invalid file type for album: {file.filename}. Only images allowed.'
+                    }), 400
+            else:
+                # All media types for single mode
+                if ext not in ALL_MEDIA_EXTENSIONS:
+                    return jsonify({
+                        'success': False,
+                        'error': f'Invalid file type: {file.filename}'
+                    }), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        meme_ids = []
+        
+        if mode == 'album':
+            # Create album directory with timestamp
+            timestamp = datetime.now().strftime("%d%m%y-%H%M")
+            album_name = f"album_{timestamp}"
+            album_dir = ALBUMS_DIR / album_name
+            album_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save all files to album directory
+            album_item_paths = []
+            for file in files:
+                if not file.filename:
+                    continue
+                
+                filename = secure_filename(file.filename)
+                unique_filename = get_unique_filename(album_dir, filename)
+                file_path = album_dir / unique_filename
+                
+                file.save(str(file_path))
+                album_item_paths.append(str(file_path.resolve()))
+            
+            if not album_item_paths:
+                conn.close()
+                return jsonify({'success': False, 'error': 'No valid files uploaded'}), 400
+            
+            # Create album entry in database
+            cursor.execute(
+                "INSERT INTO memes (file_path, title, media_type, status) VALUES (?, ?, 'album', 'new')",
+                (str(album_dir.resolve()), album_name)
+            )
+            album_id = cursor.lastrowid
+            
+            # Add album items
+            for order, item_path in enumerate(album_item_paths, start=1):
+                file_hash = get_file_hash(item_path)
+                cursor.execute(
+                    "INSERT INTO album_items (album_id, file_path, display_order, file_hash) VALUES (?, ?, ?, ?)",
+                    (album_id, item_path, order, file_hash)
+                )
+            
+            conn.commit()
+            meme_ids.append(album_id)
+            
+            # Trigger processing for the album
+            try:
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                process_script = os.path.join(script_dir, 'process_memes.py')
+                log_file = os.path.join(script_dir, 'logs', 'scan.log')
+                os.makedirs(os.path.dirname(log_file), exist_ok=True)
+                
+                with open(log_file, 'a', encoding='utf-8') as lf:
+                    lf.write("================================\n")
+                    lf.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Processing uploaded album (id={album_id})\n")
+                    lf.write("================================\n")
+                    
+                    subprocess.Popen(
+                        ['python3', process_script, '--process-one', str(album_id)],
+                        cwd=script_dir,
+                        stdout=lf,
+                        stderr=lf,
+                        start_new_session=True
+                    )
+            except Exception as e:
+                print(f"Warning: Could not trigger processing: {e}")
+        
+        else:  # single mode
+            # Save each file individually
+            for file in files:
+                if not file.filename:
+                    continue
+                
+                filename = secure_filename(file.filename)
+                unique_filename = get_unique_filename(FILES_DIR, filename)
+                file_path = FILES_DIR / unique_filename
+                
+                file.save(str(file_path))
+                
+                # Determine media type
+                media_type = determine_media_type(unique_filename)
+                if not media_type:
+                    continue
+                
+                # Compute file hash for duplicate detection
+                file_hash = get_file_hash(str(file_path.resolve()))
+                
+                # Check for duplicates
+                duplicate_id = None
+                if file_hash:
+                    cursor.execute(
+                        "SELECT id, file_path FROM memes WHERE file_hash = ? LIMIT 1",
+                        (file_hash,)
+                    )
+                    duplicate = cursor.fetchone()
+                    if duplicate:
+                        duplicate_id = duplicate[0]
+                        duplicate_path = Path(duplicate[1]).name if duplicate[1] else "unknown"
+                        
+                        # Add as error with duplicate note
+                        cursor.execute(
+                            "INSERT INTO memes (file_path, media_type, status, file_hash, error_message) VALUES (?, ?, 'error', ?, ?)",
+                            (str(file_path.resolve()), media_type, file_hash, f"Duplicate of meme {duplicate_id} ({duplicate_path})")
+                        )
+                        meme_id = cursor.lastrowid
+                        meme_ids.append(meme_id)
+                        continue
+                
+                # Add to database with status='new'
+                cursor.execute(
+                    "INSERT INTO memes (file_path, media_type, status, file_hash) VALUES (?, ?, 'new', ?)",
+                    (str(file_path.resolve()), media_type, file_hash)
+                )
+                meme_id = cursor.lastrowid
+                meme_ids.append(meme_id)
+                
+                # Trigger processing for this meme
+                try:
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                    process_script = os.path.join(script_dir, 'process_memes.py')
+                    log_file = os.path.join(script_dir, 'logs', 'scan.log')
+                    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+                    
+                    with open(log_file, 'a', encoding='utf-8') as lf:
+                        lf.write("================================\n")
+                        lf.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Processing uploaded meme (id={meme_id})\n")
+                        lf.write("================================\n")
+                        
+                        subprocess.Popen(
+                            ['python3', process_script, '--process-one', str(meme_id)],
+                            cwd=script_dir,
+                            stdout=lf,
+                            stderr=lf,
+                            start_new_session=True
+                        )
+                except Exception as e:
+                    print(f"Warning: Could not trigger processing for meme {meme_id}: {e}")
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'meme_ids': meme_ids,
+            'count': len(meme_ids)
+        })
+    
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=False)
