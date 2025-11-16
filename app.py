@@ -111,6 +111,29 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def is_public_mode():
+    """Check if site is in public mode"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = 'privacy_mode'")
+        row = cursor.fetchone()
+        conn.close()
+        return row and row['value'] == 'public'
+    except Exception:
+        return False
+
+def login_required_unless_public(f):
+    """Decorator that requires login only if not in public mode"""
+    from functools import wraps
+    
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_public_mode() and not current_user.is_authenticated:
+            return login_manager.unauthorized()
+        return f(*args, **kwargs)
+    return decorated_function
+
 def get_clippy_agent():
     """Get current Clippy agent selection from settings"""
     try:
@@ -138,7 +161,7 @@ def get_clippy_agent():
         return 'none'
 
 @app.route('/')
-@login_required
+@login_required_unless_public
 def index():
     """Main page showing all memes"""
     # Get filter parameters
@@ -359,11 +382,12 @@ def index():
         page=page,
         total_pages=total_pages,
         show_pagination=total_pages > 1,
-        clippy_agent=get_clippy_agent()
+        clippy_agent=get_clippy_agent(),
+        is_public_mode=is_public_mode()
     )
 
 @app.route('/meme/<int:meme_id>', methods=['GET', 'POST'])
-@login_required
+@login_required_unless_public
 def meme_detail(meme_id):
     """Individual meme page with editing capability"""
     # Get filter parameters for navigation (from GET or POST)
@@ -382,6 +406,11 @@ def meme_detail(meme_id):
     cursor = conn.cursor()
     
     if request.method == 'POST':
+        # Require authentication for editing
+        if not current_user.is_authenticated:
+            conn.close()
+            return redirect(url_for('login'))
+        
         # Update meme details
         status = request.form.get('status', 'new')
         title = request.form.get('title', '').strip()
@@ -672,7 +701,7 @@ def meme_detail(meme_id):
     query_string = "&" + "&".join(query_params) if query_params else ""
     
     return render_template('meme_detail.html', meme=meme, album_items=album_items, saved=saved, all_tags=all_tags, current_tags=current_tags,
-                          prev_id=prev_id, next_id=next_id, query_string=query_string, clippy_agent=get_clippy_agent())
+                          prev_id=prev_id, next_id=next_id, query_string=query_string, clippy_agent=get_clippy_agent(), is_public_mode=is_public_mode())
 
 @app.route('/api/memes/<int:meme_id>', methods=['DELETE'])
 @login_required
@@ -1203,7 +1232,7 @@ def get_meme(meme_id: int):
 @app.route('/tags')
 @login_required
 def tags():
-    """Tag management page"""
+    """Tag management page - always requires authentication"""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -1497,6 +1526,39 @@ def change_password():
     conn.close()
     
     return jsonify({'success': True, 'message': 'Password changed successfully'})
+
+@app.route('/api/settings/privacy-mode', methods=['GET'])
+@login_required
+def get_privacy_mode():
+    """Get current privacy mode setting"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM settings WHERE key = 'privacy_mode'")
+    row = cursor.fetchone()
+    privacy_mode = row['value'] if row else 'private'
+    conn.close()
+    return jsonify({'success': True, 'privacy_mode': privacy_mode})
+
+@app.route('/api/settings/privacy-mode', methods=['POST'])
+@login_required
+def set_privacy_mode():
+    """Set privacy mode (private/public)"""
+    data = request.get_json()
+    privacy_mode = data.get('privacy_mode', 'private')
+    
+    if privacy_mode not in ['private', 'public']:
+        return jsonify({'success': False, 'error': 'Invalid privacy mode'}), 400
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('privacy_mode', ?)",
+        (privacy_mode,)
+    )
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'privacy_mode': privacy_mode})
 
 def get_file_hash(file_path):
     """Compute SHA256 hash of file contents"""

@@ -94,6 +94,30 @@
         </div>
         
         <div class="section">
+            <h2>🔒 Privacy Mode</h2>
+            <p class="action-description">
+                Control who can view your Memelet collection.
+            </p>
+            <div class="privacy-mode-selector">
+                <label style="display: flex; align-items: center; padding: 15px; border: 2px solid #ddd; border-radius: 8px; margin-bottom: 10px; cursor: pointer; transition: all 0.3s;">
+                    <input type="radio" name="privacy-mode" value="private" style="margin-right: 10px; width: 20px; height: 20px; cursor: pointer;">
+                    <div>
+                        <strong style="display: block; font-size: 1.1em;">🔐 Private (Default)</strong>
+                        <span style="color: #666; font-size: 0.9em;">Only authenticated users can access your Memelet. Login required for all pages.</span>
+                    </div>
+                </label>
+                <label style="display: flex; align-items: center; padding: 15px; border: 2px solid #ddd; border-radius: 8px; cursor: pointer; transition: all 0.3s;">
+                    <input type="radio" name="privacy-mode" value="public" style="margin-right: 10px; width: 20px; height: 20px; cursor: pointer;">
+                    <div>
+                        <strong style="display: block; font-size: 1.1em;">🌍 Public</strong>
+                        <span style="color: #666; font-size: 0.9em;">Visitors can view memes and descriptions (read-only). Settings and editing require authentication.</span>
+                    </div>
+                </label>
+            </div>
+            <div id="privacy-mode-message" style="margin-top: 10px;"></div>
+        </div>
+        
+        <div class="section">
             <h2>Clippy Agent Appearance</h2>
             <p class="action-description">
                 Select which assistant agent to display, or choose "None" to disable Clippy
@@ -733,6 +757,65 @@
                 }
             });
         });
+        
+        // Load and set privacy mode
+        fetch('/api/settings/privacy-mode')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const radio = document.querySelector(`input[name="privacy-mode"][value="${data.privacy_mode}"]`);
+                    if (radio) {
+                        radio.checked = true;
+                        updatePrivacyModeStyles();
+                    }
+                }
+            })
+            .catch(error => console.error('Error loading privacy mode:', error));
+        
+        // Handle privacy mode change
+        document.querySelectorAll('input[name="privacy-mode"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const messageDiv = document.getElementById('privacy-mode-message');
+                messageDiv.innerHTML = '';
+                
+                fetch('/api/settings/privacy-mode', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        privacy_mode: this.value
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const modeName = this.value === 'private' ? 'Private' : 'Public';
+                        messageDiv.innerHTML = `<div class="message success">Privacy mode set to ${modeName}</div>`;
+                        updatePrivacyModeStyles();
+                    } else {
+                        messageDiv.innerHTML = '<div class="message error">' + data.error + '</div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    messageDiv.innerHTML = '<div class="message error">An error occurred. Please try again.</div>';
+                });
+            });
+        });
+        
+        function updatePrivacyModeStyles() {
+            document.querySelectorAll('input[name="privacy-mode"]').forEach(radio => {
+                const label = radio.closest('label');
+                if (radio.checked) {
+                    label.style.borderColor = '#667eea';
+                    label.style.backgroundColor = '#f0f4ff';
+                } else {
+                    label.style.borderColor = '#ddd';
+                    label.style.backgroundColor = 'transparent';
+                }
+            });
+        }
     </script>
     <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
     <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>

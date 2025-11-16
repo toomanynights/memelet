@@ -19,16 +19,22 @@
 <body>
     <div class="container">
         <header>
+            {% if current_user.is_authenticated %}
             <div class="header-buttons left">
                 <button class="header-button upload" title="Upload Memes" onclick="openUploadModal()">📤</button>
             </div>
+            {% endif %}
             <div class="header-buttons right">
                 <button class="header-button menu" title="Menu" onclick="toggleDropdownMenu()">⋮</button>
                 <div class="dropdown-menu" id="dropdownMenu">
+                    {% if current_user.is_authenticated %}
                     <a href="/settings"><span class="dropdown-icon">⚙️</span> Settings</a>
                     <a href="/tags"><span class="dropdown-icon">🏷️</span> Tags</a>
                     <a href="#" onclick="event.preventDefault(); openUploadModal();"><span class="dropdown-icon">📤</span> Upload</a>
                     <a href="/logout"><span class="dropdown-icon">🚪</span> Logout</a>
+                    {% else %}
+                    <a href="/login"><span class="dropdown-icon">🔑</span> Sign In</a>
+                    {% endif %}
                 </div>
             </div>
             <h1><img src="{{ url_for('static', filename='logo.png') }}" alt="Memelet" style="height: 1.2em; vertical-align: -0.2em;"> Memelet</h1>
@@ -145,6 +151,7 @@
         </header>
         
         {% if memes %}
+        {% if current_user.is_authenticated %}
         <div class="bulk-actions" id="bulkActions">
             <button class="bulk-btn bulk-btn-select" onclick="toggleSelectAll()">☑️ Select All</button>
             <button class="bulk-btn bulk-btn-tags" onclick="openTagModal()">🏷️ Manage Tags</button>
@@ -155,11 +162,14 @@
             <button class="bulk-btn bulk-btn-delete" onclick="bulkDelete()">🗑️ Delete Selected</button>
             <button class="bulk-btn bulk-btn-cancel" onclick="cancelBulkSelect()">Cancel</button>
         </div>
+        {% endif %}
         
         <div class="memes-grid">
             {% for meme in memes %}
             <div class="meme-card-wrapper">
+                {% if current_user.is_authenticated %}
                 <input type="checkbox" class="meme-checkbox" data-id="{{ meme.id }}" onclick="toggleBulkActions(event)">
+                {% endif %}
                 <a href="/meme/{{ meme.id }}?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if tag_filter %}tag={{ tag_filter }}&{% endif %}{% if media_filter %}media={{ media_filter }}{% endif %}" class="meme-card">
                     <div style="position: relative;">
                         {% if meme.media_type == 'album' %}

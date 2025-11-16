@@ -25,7 +25,11 @@
         <div class="navigation">
             <div style="display: flex; gap: 10px;">
                 <a href="/" class="back-button">← Back to Collection</a>
+                {% if current_user.is_authenticated %}
                 <a href="/logout" class="back-button">🚪 Logout</a>
+                {% else %}
+                <a href="/login" class="back-button">🔑 Sign In</a>
+                {% endif %}
             </div>
             <div>
                 {% if prev_id %}
@@ -49,15 +53,17 @@
                 {% if album_items and (album_items|length) > 1 %}
                 <div class="thumb-strip" id="thumbStrip" data-album-id="{{ meme.id }}">
                     {% for it in album_items %}
-                    <div class="thumb-item" draggable="true" data-path="{{ it.path }}">
+                    <div class="thumb-item" {% if current_user.is_authenticated %}draggable="true"{% endif %} data-path="{{ it.path }}">
                         <img src="{{ it.url }}" onclick="document.getElementById('albumMain').src='{{ it.url }}'" alt="thumb {{ loop.index }}">
                     </div>
                     {% endfor %}
                 </div>
+                {% if current_user.is_authenticated %}
                 <div style="display:flex; gap:10px; margin-top:10px; align-items:center;">
                     <button type="button" id="saveOrderBtn" class="btn btn-primary" style="display:none;" onclick="saveAlbumOrder()">Save Order</button>
                     <span id="orderStatus" style="color:#718096; font-size:0.9rem;"></span>
                 </div>
+                {% endif %}
                 {% endif %}
                 {% elif meme.video_url %}
                 <video controls class="meme-video">
@@ -85,17 +91,20 @@
                     </div>
                     {% endif %}
                 </div>
+                {% if current_user.is_authenticated %}
                 <div style="margin-top: 15px; display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
                     <button type="button" class="btn btn-warning" onclick="processThisMeme()">🕵️🏻‍♂️ Analyze This Meme</button>
                     <span id="processStatus" data-initial-updated-at="{{ meme.updated_at or '' }}" style="color:#718096; font-size:0.9rem;"></span>
                     <button type="button" class="btn" onclick="scanTagsThisMeme()">🔎 Scan Tags</button>
                     <span id="tagScanStatus" data-initial-updated-at="{{ meme.updated_at or '' }}" style="color:#718096; font-size:0.9rem;"></span>
                 </div>
+                {% endif %}
             </div>
             
             <div class="form-section">
                 <h1>Meme Details</h1>
                 
+                {% if current_user.is_authenticated %}
                 <form method="POST">
                     <!-- Preserve filter parameters -->
                     <input type="hidden" name="search" value="{{ request.args.get('search', '') }}">
@@ -171,7 +180,68 @@
                         <a href="/" class="btn btn-secondary">Cancel</a>
                     </div>
                 </form>
+                {% else %}
+                <!-- Read-only view for visitors -->
+                {% if meme.media_type == 'album' %}
+                <div class="form-group">
+                    <label>Album Title</label>
+                    <div style="padding: 10px; background: #f7fafc; border-radius: 6px;">{{ meme.title or 'Untitled' }}</div>
+                </div>
+                {% endif %}
+
+                <div class="form-group">
+                    <label>Status</label>
+                    <div style="padding: 10px; background: #f7fafc; border-radius: 6px;">{{ meme.status }}</div>
+                </div>
                 
+                <div class="form-group">
+                    <label>Tags</label>
+                    <div class="tag-selector">
+                        {% if all_tags %}
+                            {% for tag in all_tags %}
+                                {% if tag.id in current_tags %}
+                                <span class="tag-chip" style="background-color: {{ tag.color }}; opacity: 0.8; cursor: default;">
+                                    {{ tag.name }}
+                                </span>
+                                {% endif %}
+                            {% endfor %}
+                        {% else %}
+                            <span style="color: #a0aec0;">No tags</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Referenced Content</label>
+                    <div style="padding: 10px; background: #f7fafc; border-radius: 6px; white-space: pre-wrap;">{{ meme.ref_content or 'N/A' }}</div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Template</label>
+                    <div style="padding: 10px; background: #f7fafc; border-radius: 6px;">{{ meme.template or 'N/A' }}</div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Caption</label>
+                    <div style="padding: 10px; background: #f7fafc; border-radius: 6px; white-space: pre-wrap;">{{ meme.caption or 'N/A' }}</div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Description</label>
+                    <div style="padding: 10px; background: #f7fafc; border-radius: 6px; white-space: pre-wrap;">{{ meme.description or 'N/A' }}</div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Meaning/Context</label>
+                    <div style="padding: 10px; background: #f7fafc; border-radius: 6px; white-space: pre-wrap;">{{ meme.meaning or 'N/A' }}</div>
+                </div>
+                
+                <div style="padding: 15px; background: #edf2f7; border-radius: 8px; text-align: center; color: #718096;">
+                    🔒 <a href="/login" style="color: #667eea; text-decoration: none; font-weight: 500;">Sign in</a> to edit meme details
+                </div>
+                {% endif %}
+                
+                {% if current_user.is_authenticated %}
                 <div class="delete-section">
                     <div class="danger-zone">
                         <h3>⚠️ Danger Zone</h3>
@@ -179,6 +249,7 @@
                         <button onclick="deleteMeme()" class="btn btn-danger">Delete Meme</button>
                     </div>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -478,7 +549,8 @@
             pollTimer = setInterval(tick, 1000);
         }
 
-        // Drag & drop thumbnail reordering for albums
+        // Drag & drop thumbnail reordering for albums (only for authenticated users)
+        {% if current_user.is_authenticated %}
         (function(){
             const strip = document.getElementById('thumbStrip');
             if (!strip) return;
@@ -525,6 +597,7 @@
                 if (btn) btn.style.display = changed ? 'inline-block' : 'none';
             }
         })();
+        {% endif %}
 
         function saveAlbumOrder() {
             const strip = document.getElementById('thumbStrip');

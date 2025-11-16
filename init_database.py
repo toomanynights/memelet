@@ -107,6 +107,11 @@ def init_database():
     if cursor.fetchone() is None:
         cursor.execute("INSERT INTO settings (key, value) VALUES ('replicate_api_key', '')")
     
+    # Initialize default privacy_mode setting if not set (private/public)
+    cursor.execute("SELECT value FROM settings WHERE key = 'privacy_mode'")
+    if cursor.fetchone() is None:
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('privacy_mode', 'private')")
+    
     # Users table for authentication
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
