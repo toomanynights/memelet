@@ -84,6 +84,31 @@ def get_db_connection():
     """Get database connection"""
     return sqlite3.connect(DB_PATH, timeout=10)
 
+def get_replicate_api_key():
+    """Get Replicate API key from database settings"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT value FROM settings WHERE key = 'replicate_api_key'")
+        row = cursor.fetchone()
+        if row and row[0]:
+            return row[0]
+        return None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+def setup_replicate_api():
+    """Setup Replicate API with key from database"""
+    api_key = get_replicate_api_key()
+    if api_key:
+        os.environ["REPLICATE_API_TOKEN"] = api_key
+        return True
+    else:
+        # Try to use existing environment variable as fallback
+        return "REPLICATE_API_TOKEN" in os.environ
+
 def parse_tags_from_filename(file_path):
     """Parse tags from filename and folder path based on tags that have parse_from_filename enabled.
     Returns list of tag IDs that match the filename or folder path.
@@ -1407,6 +1432,12 @@ def main():
     if not Path(DB_PATH).exists():
         print(f"❌ Database not found. Please run init_database.py first!")
         return
+    
+    # Setup Replicate API from database (for operations that need it)
+    if args.process or args.retry_errors or args.process_one or args.scan_tags_all or args.scan_tags_one or args.scan_tags_ids:
+        if not setup_replicate_api():
+            print("⚠️ Warning: Replicate API key not configured. Please set it in the Settings page.")
+            print("   AI-powered features will not work without an API key.")
     
     # Execute requested actions
     if args.scan_tags_one is not None:

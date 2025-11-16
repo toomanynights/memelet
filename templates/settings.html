@@ -50,6 +50,20 @@
         </div>
         
         <div class="section">
+            <h2>🔑 Replicate API Key</h2>
+            <p class="action-description">
+                Configure your Replicate API key for AI-powered meme analysis. Get your key from <a href="https://replicate.com/account/api-tokens" target="_blank" rel="noopener noreferrer">replicate.com/account/api-tokens</a>
+            </p>
+            <div class="api-key-form">
+                <input type="password" id="api-key-input" placeholder="Enter your Replicate API key" style="width: 400px; max-width: 100%; padding: 10px; font-family: monospace; font-size: 0.9rem;">
+                <button type="button" class="btn btn-primary" onclick="saveApiKey()" style="margin-left: 10px;">💾 Save API Key</button>
+                <button type="button" class="btn" onclick="toggleApiKeyVisibility()" style="margin-left: 5px;">👁️ Show/Hide</button>
+            </div>
+            <div id="api-key-status" style="margin-top: 10px; font-size: 0.9rem;"></div>
+            <div id="api-key-message" style="margin-top: 10px;"></div>
+        </div>
+        
+        <div class="section">
             <h2>Clippy Agent Appearance</h2>
             <p class="action-description">
                 Select which assistant agent to display, or choose "None" to disable Clippy
@@ -168,6 +182,91 @@
                     .catch(error => console.error('Error refreshing log:', error));
             }
         }, 5000);
+    </script>
+    
+    <!-- API Key Management Script -->
+    <script>
+        let currentApiKey = '';
+        
+        // Load current API key on page load
+        function loadApiKey() {
+            fetch('/api/settings/replicate-api-key')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const statusEl = document.getElementById('api-key-status');
+                        if (data.has_key) {
+                            currentApiKey = data.api_key;
+                            document.getElementById('api-key-input').value = data.api_key;
+                            statusEl.innerHTML = '✅ API key is configured (masked for security)';
+                            statusEl.style.color = '#2ecc71';
+                        } else {
+                            statusEl.innerHTML = '⚠️ No API key configured';
+                            statusEl.style.color = '#e74c3c';
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading API key:', error);
+                });
+        }
+        
+        function saveApiKey() {
+            const apiKey = document.getElementById('api-key-input').value.trim();
+            
+            if (!apiKey) {
+                const msgEl = document.getElementById('api-key-message');
+                msgEl.innerHTML = '<div class="message error">Please enter an API key</div>';
+                setTimeout(() => msgEl.innerHTML = '', 3000);
+                return;
+            }
+            
+            // Don't save if it's the masked version
+            if (apiKey.startsWith('•')) {
+                const msgEl = document.getElementById('api-key-message');
+                msgEl.innerHTML = '<div class="message error">Please enter a new API key or clear the field to update</div>';
+                setTimeout(() => msgEl.innerHTML = '', 3000);
+                return;
+            }
+            
+            fetch('/api/settings/replicate-api-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: apiKey })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const msgEl = document.getElementById('api-key-message');
+                    msgEl.innerHTML = '<div class="message success">API key saved successfully!</div>';
+                    setTimeout(() => msgEl.innerHTML = '', 3000);
+                    
+                    // Reload to show masked version
+                    loadApiKey();
+                } else {
+                    const msgEl = document.getElementById('api-key-message');
+                    msgEl.innerHTML = '<div class="message error">Error saving API key: ' + (data.error || 'Unknown error') + '</div>';
+                    setTimeout(() => msgEl.innerHTML = '', 5000);
+                }
+            })
+            .catch(error => {
+                const msgEl = document.getElementById('api-key-message');
+                msgEl.innerHTML = '<div class="message error">Error saving API key: ' + error + '</div>';
+                setTimeout(() => msgEl.innerHTML = '', 5000);
+            });
+        }
+        
+        function toggleApiKeyVisibility() {
+            const input = document.getElementById('api-key-input');
+            if (input.type === 'password') {
+                input.type = 'text';
+            } else {
+                input.type = 'password';
+            }
+        }
+        
+        // Load API key when page loads
+        window.addEventListener('DOMContentLoaded', loadApiKey);
     </script>
     
     <!-- Agent Selector Script -->

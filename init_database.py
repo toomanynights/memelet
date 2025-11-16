@@ -102,6 +102,11 @@ def init_database():
     if cursor.fetchone() is None:
         cursor.execute("INSERT INTO settings (key, value) VALUES ('agent_form', 'none')")
     
+    # Initialize default replicate_api_key setting if not set
+    cursor.execute("SELECT value FROM settings WHERE key = 'replicate_api_key'")
+    if cursor.fetchone() is None:
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('replicate_api_key', '')")
+    
     conn.commit()
     conn.close()
     

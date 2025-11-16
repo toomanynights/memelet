@@ -1285,5 +1285,65 @@ def set_clippy_agent_setting():
     
     return jsonify({'success': True, 'agent_form': agent_form})
 
+@app.route('/api/settings/replicate-api-key', methods=['GET'])
+def get_replicate_api_key_setting():
+    """Get Replicate API key (masked for security)"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Ensure settings table exists
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    
+    cursor.execute("SELECT value FROM settings WHERE key = 'replicate_api_key'")
+    row = cursor.fetchone()
+    if not row:
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('replicate_api_key', '')")
+        conn.commit()
+        api_key = ''
+    else:
+        api_key = row[0] or ''
+    
+    conn.close()
+    
+    # Mask the API key for display (show only last 4 characters)
+    if api_key and len(api_key) > 4:
+        masked_key = '•' * (len(api_key) - 4) + api_key[-4:]
+    else:
+        masked_key = api_key
+    
+    return jsonify({'success': True, 'api_key': masked_key, 'has_key': bool(api_key)})
+
+@app.route('/api/settings/replicate-api-key', methods=['POST'])
+def set_replicate_api_key_setting():
+    """Save Replicate API key"""
+    data = request.get_json()
+    api_key = data.get('api_key', '').strip()
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Ensure settings table exists
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    
+    cursor.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('replicate_api_key', ?)",
+        (api_key,)
+    )
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'API key saved successfully'})
+
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=False)
