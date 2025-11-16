@@ -23,7 +23,10 @@
 <body>
     <div class="container">
         <div class="navigation">
-            <a href="/" class="back-button">← Back to Collection</a>
+            <div style="display: flex; gap: 10px;">
+                <a href="/" class="back-button">← Back to Collection</a>
+                <a href="/logout" class="back-button">🚪 Logout</a>
+            </div>
             <div>
                 {% if prev_id %}
                 <a href="/meme/{{ prev_id }}?{{ query_string }}" class="nav-button prev">← Previous</a>

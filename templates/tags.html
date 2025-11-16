@@ -27,7 +27,10 @@
         <div class="header">
             <a href="/" class="back-button">← Back</a>
             <h1>🏷️ Tag Management</h1>
-            <button class="create-btn" onclick="openCreateModal()">+ Create Tag</button>
+            <div style="display: flex; gap: 10px;">
+                <button class="create-btn" onclick="openCreateModal()">+ Create Tag</button>
+                <a href="/logout" class="btn" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center;">🚪 Logout</a>
+            </div>
         </div>
         
         <div class="tags-list">

@@ -107,6 +107,26 @@ def init_database():
     if cursor.fetchone() is None:
         cursor.execute("INSERT INTO settings (key, value) VALUES ('replicate_api_key', '')")
     
+    # Users table for authentication
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Initialize default admin user if not exists (password: 'admin')
+    cursor.execute("SELECT id FROM users WHERE username = 'admin'")
+    if cursor.fetchone() is None:
+        from werkzeug.security import generate_password_hash
+        cursor.execute(
+            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+            ('admin', generate_password_hash('admin'))
+        )
+    
     conn.commit()
     conn.close()
     
@@ -117,6 +137,8 @@ def init_database():
     print("   - tags: id, name, description, color, parse_from_filename, ai_can_suggest, created_at")
     print("   - meme_tags: meme_id, tag_id")
     print("   - settings: key, value")
+    print("   - users: id, username, password_hash, created_at, updated_at")
+    print(f"\n🔐 Default login credentials: username='admin', password='admin'")
 
 if __name__ == "__main__":
     init_database()

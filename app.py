@@ -2,7 +2,9 @@
 """
 Memelet Web Interface
 """
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for, flash
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from uuid import uuid4
 import sqlite3
@@ -10,9 +12,36 @@ from pathlib import Path
 import os
 import hashlib
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+
+# Flask-Login setup
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.session_protection = 'strong'
+
+# Set session lifetime to 2 weeks
+app.permanent_session_lifetime = timedelta(days=14)
+
+# User class for Flask-Login
+class User(UserMixin):
+    def __init__(self, id, username):
+        self.id = id
+        self.username = username
+
+@login_manager.user_loader
+def load_user(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return User(row['id'], row['username'])
+    return None
 
 DB_PATH = "memelet.db"
 MEMES_URL_BASE = "https://memes.tmn.name/files/"
@@ -32,6 +61,49 @@ ALL_MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | GIF_EXTENSIONS | VIDEO_EXTENSIONS
 @app.route('/favicon.ico')
 def favicon():
     return send_from_directory(app.static_folder, 'favicon.ico', mimetype='image/x-icon')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page"""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
+    current_year = datetime.now().year
+    
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        
+        if not username or not password:
+            flash('Please enter both username and password', 'error')
+            return render_template('login.html', username=username, current_year=current_year)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row and check_password_hash(row['password_hash'], password):
+            user = User(row['id'], row['username'])
+            login_user(user, remember=True)  # Remember for 2 weeks
+            
+            next_page = request.args.get('next')
+            if next_page and next_page.startswith('/'):
+                return redirect(next_page)
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid username or password', 'error')
+            return render_template('login.html', username=username, current_year=current_year)
+    
+    return render_template('login.html', current_year=current_year)
+
+@app.route('/logout')
+@login_required
+def logout():
+    """Logout user"""
+    logout_user()
+    return redirect(url_for('login'))
 
 def get_db_connection():
     """Get database connection"""
@@ -66,6 +138,7 @@ def get_clippy_agent():
         return 'none'
 
 @app.route('/')
+@login_required
 def index():
     """Main page showing all memes"""
     # Get filter parameters
@@ -290,6 +363,7 @@ def index():
     )
 
 @app.route('/meme/<int:meme_id>', methods=['GET', 'POST'])
+@login_required
 def meme_detail(meme_id):
     """Individual meme page with editing capability"""
     # Get filter parameters for navigation (from GET or POST)
@@ -601,6 +675,7 @@ def meme_detail(meme_id):
                           prev_id=prev_id, next_id=next_id, query_string=query_string, clippy_agent=get_clippy_agent())
 
 @app.route('/api/memes/<int:meme_id>', methods=['DELETE'])
+@login_required
 def delete_meme(meme_id):
     """Delete a meme from database and filesystem"""
     import os
@@ -634,6 +709,7 @@ def delete_meme(meme_id):
     return {'success': True}
 
 @app.route('/api/bulk-delete', methods=['POST'])
+@login_required
 def bulk_delete():
     """Delete multiple memes"""
     import os
@@ -670,6 +746,7 @@ def bulk_delete():
     return {'success': True, 'deleted': deleted_count}
 
 @app.route('/api/bulk-tags', methods=['POST'])
+@login_required
 def bulk_tags():
     """Add or remove tags for multiple memes based on checkbox state"""
     data = request.get_json()
@@ -708,6 +785,7 @@ def bulk_tags():
     return {'success': True, 'added': added_count, 'removed': removed_count}
 
 @app.route('/api/albums/<int:album_id>/order', methods=['POST'])
+@login_required
 def update_album_order(album_id: int):
     """Update the display order of items in an album."""
     try:
@@ -772,6 +850,7 @@ def update_album_order(album_id: int):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/bulk-memes-tags', methods=['POST'])
+@login_required
 def bulk_memes_tags():
     """Get tags for selected memes - returns full and partial tags"""
     data = request.get_json()
@@ -819,6 +898,7 @@ def bulk_memes_tags():
     }
 
 @app.route('/settings')
+@login_required
 def settings():
     """Settings page with logs"""
     import os
@@ -856,6 +936,7 @@ def settings():
     return render_template('settings.html', log_content=log_content, current_agent=current_agent)
 
 @app.route('/api/trigger-action', methods=['POST'])
+@login_required
 def trigger_action():
     """API endpoint to trigger background actions"""
     import subprocess
@@ -913,6 +994,7 @@ def trigger_action():
     return {'success': False, 'message': 'Invalid action'}
 
 @app.route('/api/memes/<int:meme_id>/scan-tags', methods=['POST'])
+@login_required
 def scan_tags_single_meme(meme_id: int):
     """Trigger a tags-only scan for a single meme (path + AI-from-text)."""
     import subprocess, os
@@ -947,6 +1029,7 @@ def scan_tags_single_meme(meme_id: int):
         return {'success': False, 'error': str(e)}, 500
 
 @app.route('/api/bulk-scan-tags', methods=['POST'])
+@login_required
 def bulk_scan_tags():
     """Trigger tags-only scan for a set of selected meme IDs."""
     import subprocess, os
@@ -986,6 +1069,7 @@ def bulk_scan_tags():
         return {'success': False, 'error': str(e)}, 500
 
 @app.route('/api/jobs/<job_id>/status', methods=['GET'])
+@login_required
 def job_status(job_id: str):
     """Return scan-tag job status by scanning the log for the COMPLETE marker."""
     import os, re
@@ -1010,6 +1094,7 @@ def job_status(job_id: str):
         return {'success': False, 'error': str(e)}, 500
 
 @app.route('/api/memes/<int:meme_id>/process', methods=['POST'])
+@login_required
 def process_single_meme(meme_id: int):
     """Trigger processing of a single meme in background and log to scan.log."""
     import subprocess, os
@@ -1071,6 +1156,7 @@ def process_single_meme(meme_id: int):
         return {'success': False, 'error': str(e)}, 500
 
 @app.route('/api/memes/<int:meme_id>', methods=['GET'])
+@login_required
 def get_meme(meme_id: int):
     """Return current meme fields for polling/progress UI."""
     conn = get_db_connection()
@@ -1115,6 +1201,7 @@ def get_meme(meme_id: int):
     return resp
 
 @app.route('/tags')
+@login_required
 def tags():
     """Tag management page"""
     conn = get_db_connection()
@@ -1146,6 +1233,7 @@ def tags():
     return render_template('tags.html', tags=tags_list, clippy_agent=get_clippy_agent())
 
 @app.route('/api/tags', methods=['POST'])
+@login_required
 def create_tag():
     """Create a new tag"""
     data = request.get_json()
@@ -1173,6 +1261,7 @@ def create_tag():
         return {'success': False, 'error': 'Tag name already exists'}
 
 @app.route('/api/tags/<int:tag_id>', methods=['PUT'])
+@login_required
 def update_tag(tag_id):
     """Update a tag"""
     data = request.get_json()
@@ -1200,6 +1289,7 @@ def update_tag(tag_id):
     return {'success': True}
 
 @app.route('/api/tags/<int:tag_id>', methods=['DELETE'])
+@login_required
 def delete_tag(tag_id):
     """Delete a tag"""
     conn = get_db_connection()
@@ -1213,6 +1303,7 @@ def delete_tag(tag_id):
     return {'success': True}
 
 @app.route('/api/clippy-agents', methods=['GET'])
+@login_required
 def get_clippy_agents():
     """Get list of available Clippy agents"""
     agents_dir = Path(app.static_folder) / 'clippy' / 'agents'
@@ -1242,6 +1333,7 @@ def get_clippy_agents():
     return jsonify({'success': True, 'agents': agents})
 
 @app.route('/api/settings/clippy-agent', methods=['GET'])
+@login_required
 def get_clippy_agent_setting():
     """Get current Clippy agent selection"""
     conn = get_db_connection()
@@ -1269,6 +1361,7 @@ def get_clippy_agent_setting():
     return jsonify({'success': True, 'agent_form': agent_form})
 
 @app.route('/api/settings/clippy-agent', methods=['POST'])
+@login_required
 def set_clippy_agent_setting():
     """Save Clippy agent selection"""
     data = request.get_json()
@@ -1303,6 +1396,7 @@ def set_clippy_agent_setting():
     return jsonify({'success': True, 'agent_form': agent_form})
 
 @app.route('/api/settings/replicate-api-key', methods=['GET'])
+@login_required
 def get_replicate_api_key_setting():
     """Get Replicate API key (masked for security)"""
     conn = get_db_connection()
@@ -1336,6 +1430,7 @@ def get_replicate_api_key_setting():
     return jsonify({'success': True, 'api_key': masked_key, 'has_key': bool(api_key)})
 
 @app.route('/api/settings/replicate-api-key', methods=['POST'])
+@login_required
 def set_replicate_api_key_setting():
     """Save Replicate API key"""
     data = request.get_json()
@@ -1361,6 +1456,47 @@ def set_replicate_api_key_setting():
     conn.close()
     
     return jsonify({'success': True, 'message': 'API key saved successfully'})
+
+@app.route('/api/settings/change-password', methods=['POST'])
+@login_required
+def change_password():
+    """Change user password"""
+    data = request.get_json()
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+    confirm_password = data.get('confirm_password', '')
+    
+    if not current_password or not new_password or not confirm_password:
+        return jsonify({'success': False, 'error': 'All fields are required'}), 400
+    
+    if new_password != confirm_password:
+        return jsonify({'success': False, 'error': 'New passwords do not match'}), 400
+    
+    if len(new_password) < 4:
+        return jsonify({'success': False, 'error': 'Password must be at least 4 characters'}), 400
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Verify current password
+    cursor.execute("SELECT password_hash FROM users WHERE id = ?", (current_user.id,))
+    row = cursor.fetchone()
+    
+    if not row or not check_password_hash(row['password_hash'], current_password):
+        conn.close()
+        return jsonify({'success': False, 'error': 'Current password is incorrect'}), 400
+    
+    # Update password
+    new_password_hash = generate_password_hash(new_password)
+    cursor.execute(
+        "UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (new_password_hash, current_user.id)
+    )
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'Password changed successfully'})
 
 def get_file_hash(file_path):
     """Compute SHA256 hash of file contents"""
@@ -1402,6 +1538,7 @@ def determine_media_type(filename):
     return None
 
 @app.route('/api/upload', methods=['POST'])
+@login_required
 def upload_files():
     """Handle file uploads"""
     try:
