@@ -968,7 +968,7 @@ def settings():
     # Get current agent selection
     current_agent = get_clippy_agent()
     
-    return render_template('settings.html', log_content=log_content, current_agent=current_agent)
+    return render_template('settings.html', log_content=log_content, current_agent=current_agent, username=current_user.username)
 
 @app.route('/api/trigger-action', methods=['POST'])
 @login_required

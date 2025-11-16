@@ -71,24 +71,35 @@
         </div>
         
         <div class="section">
-            <h2>🔐 Change Password</h2>
+            <h2>🔐 Account Security</h2>
             <p class="action-description">
-                Update your account password. Password must be at least 4 characters.
+                Manage your account credentials.
             </p>
             <div class="password-change-form">
                 <div style="margin-bottom: 15px;">
-                    <label for="current-password" style="display: block; margin-bottom: 5px; font-weight: 500;">Current Password</label>
-                    <input type="password" id="current-password" placeholder="Enter current password" style="width: 400px; max-width: 100%; padding: 10px;">
+                    <label for="username-display" style="display: block; margin-bottom: 5px; font-weight: 500;">Your Login</label>
+                    <input type="text" id="username-display" value="{{ username }}" readonly style="width: 400px; max-width: 100%; padding: 10px; background: #f7fafc; cursor: not-allowed; color: #4a5568;">
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <label for="new-password" style="display: block; margin-bottom: 5px; font-weight: 500;">New Password</label>
-                    <input type="password" id="new-password" placeholder="Enter new password" style="width: 400px; max-width: 100%; padding: 10px;">
+                <button type="button" class="btn btn-primary" id="show-password-fields-btn" onclick="showPasswordFields()">🔒 Change Password</button>
+                
+                <div id="password-fields" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                    <div style="margin-bottom: 15px;">
+                        <label for="current-password" style="display: block; margin-bottom: 5px; font-weight: 500;">Current Password</label>
+                        <input type="password" id="current-password" placeholder="Enter current password" style="width: 400px; max-width: 100%; padding: 10px;">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label for="new-password" style="display: block; margin-bottom: 5px; font-weight: 500;">New Password</label>
+                        <input type="password" id="new-password" placeholder="Enter new password (min 4 characters)" style="width: 400px; max-width: 100%; padding: 10px;">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label for="confirm-password" style="display: block; margin-bottom: 5px; font-weight: 500;">Confirm New Password</label>
+                        <input type="password" id="confirm-password" placeholder="Confirm new password" style="width: 400px; max-width: 100%; padding: 10px;">
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="btn btn-primary" onclick="submitPasswordChange()">💾 Save New Password</button>
+                        <button type="button" class="btn" onclick="hidePasswordFields()">Cancel</button>
+                    </div>
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <label for="confirm-password" style="display: block; margin-bottom: 5px; font-weight: 500;">Confirm New Password</label>
-                    <input type="password" id="confirm-password" placeholder="Confirm new password" style="width: 400px; max-width: 100%; padding: 10px;">
-                </div>
-                <button type="button" class="btn btn-primary" onclick="changePassword()">🔒 Change Password</button>
             </div>
             <div id="password-message" style="margin-top: 10px;"></div>
         </div>
@@ -693,8 +704,27 @@
                 }
             });
         
+        // Show password change fields
+        function showPasswordFields() {
+            document.getElementById('password-fields').style.display = 'block';
+            document.getElementById('show-password-fields-btn').style.display = 'none';
+            document.getElementById('current-password').focus();
+        }
+        
+        // Hide password change fields
+        function hidePasswordFields() {
+            document.getElementById('password-fields').style.display = 'none';
+            document.getElementById('show-password-fields-btn').style.display = 'inline-block';
+            // Clear fields
+            document.getElementById('current-password').value = '';
+            document.getElementById('new-password').value = '';
+            document.getElementById('confirm-password').value = '';
+            // Clear message
+            document.getElementById('password-message').innerHTML = '';
+        }
+        
         // Password change function
-        function changePassword() {
+        function submitPasswordChange() {
             const currentPassword = document.getElementById('current-password').value;
             const newPassword = document.getElementById('new-password').value;
             const confirmPassword = document.getElementById('confirm-password').value;
@@ -702,20 +732,24 @@
             
             // Clear previous messages
             messageDiv.innerHTML = '';
+            messageDiv.style.display = 'none';
             
             // Validation
             if (!currentPassword || !newPassword || !confirmPassword) {
                 messageDiv.innerHTML = '<div class="message error">All fields are required</div>';
+                messageDiv.style.display = 'block';
                 return;
             }
             
             if (newPassword !== confirmPassword) {
                 messageDiv.innerHTML = '<div class="message error">New passwords do not match</div>';
+                messageDiv.style.display = 'block';
                 return;
             }
             
             if (newPassword.length < 4) {
                 messageDiv.innerHTML = '<div class="message error">Password must be at least 4 characters</div>';
+                messageDiv.style.display = 'block';
                 return;
             }
             
@@ -734,18 +768,31 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    messageDiv.innerHTML = '<div class="message success">' + data.message + '</div>';
-                    // Clear form
-                    document.getElementById('current-password').value = '';
-                    document.getElementById('new-password').value = '';
-                    document.getElementById('confirm-password').value = '';
+                    // Show success message
+                    messageDiv.innerHTML = '<div class="message success" style="transition: opacity 0.5s;">' + data.message + '</div>';
+                    messageDiv.style.display = 'block';
+                    
+                    // Wait 2 seconds, then fade out and hide fields
+                    setTimeout(() => {
+                        const successMsg = messageDiv.querySelector('.message.success');
+                        if (successMsg) {
+                            successMsg.style.opacity = '0';
+                            // After fade completes, hide everything
+                            setTimeout(() => {
+                                hidePasswordFields();
+                                messageDiv.style.display = 'none';
+                            }, 500);
+                        }
+                    }, 2000);
                 } else {
                     messageDiv.innerHTML = '<div class="message error">' + data.error + '</div>';
+                    messageDiv.style.display = 'block';
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
                 messageDiv.innerHTML = '<div class="message error">An error occurred. Please try again.</div>';
+                messageDiv.style.display = 'block';
             });
         }
         
@@ -753,7 +800,7 @@
         ['current-password', 'new-password', 'confirm-password'].forEach(id => {
             document.getElementById(id).addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
-                    changePassword();
+                    submitPasswordChange();
                 }
             });
         });
