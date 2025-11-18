@@ -14,11 +14,12 @@ import os
 import shutil
 import cv2
 import hashlib
+from config import get_db_path, get_memes_dir, get_memes_url_base
 
-DB_PATH = "memelet.db"
-MEMES_DIR = "/home/basil/memes/files"
-TEMP_FRAMES_DIR = "/home/basil/memes/files/_system/temp/video_frames"
-TEMP_FRAMES_URL = "https://memes.tmn.name/files/_system/temp/video_frames"
+DB_PATH = get_db_path()
+MEMES_DIR = get_memes_dir()
+TEMP_FRAMES_DIR = str(Path(MEMES_DIR) / '_system' / 'temp' / 'video_frames')
+TEMP_FRAMES_URL = f"{get_memes_url_base()}_system/temp/video_frames"
 
 SYSTEM_PROMPT = (
     "You're a meme expert. You're very smart and see meanings between the lines. "
@@ -1015,14 +1016,15 @@ def analyze_meme(file_path, media_type, album_items=None):
     # Get relative path from MEMES_DIR to build proper URL
     file_path_obj = Path(file_path)
     memes_dir_obj = Path(MEMES_DIR)
+    memes_url_base = get_memes_url_base()
     
     try:
         relative_path = file_path_obj.relative_to(memes_dir_obj)
-        media_url = f"https://memes.tmn.name/files/{relative_path.as_posix()}"
+        media_url = f"{memes_url_base}{relative_path.as_posix()}"
     except ValueError:
         # Fallback if path isn't relative to MEMES_DIR
         file_name = file_path_obj.name
-        media_url = f"https://memes.tmn.name/files/{file_name}"
+        media_url = f"{memes_url_base}{file_name}"
     
     temp_dir = None
     
@@ -1038,10 +1040,10 @@ def analyze_meme(file_path, media_type, album_items=None):
                 try:
                     item_path_obj = Path(item_path)
                     relative_item_path = item_path_obj.relative_to(memes_dir_obj)
-                    item_url = f"https://memes.tmn.name/files/{relative_item_path.as_posix()}"
+                    item_url = f"{memes_url_base}{relative_item_path.as_posix()}"
                     image_urls.append(item_url)
                 except ValueError:
-                    item_url = f"https://memes.tmn.name/files/{item_path_obj.name}"
+                    item_url = f"{memes_url_base}{item_path_obj.name}"
                     image_urls.append(item_url)
             
             input_data = {

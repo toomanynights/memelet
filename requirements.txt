@@ -2,6 +2,9 @@
 Flask>=3.0.0
 Flask-Login>=0.6.0
 
+# Environment variable loading
+python-dotenv>=1.0.0
+
 # AI image analysis
 replicate>=1.0.0
 

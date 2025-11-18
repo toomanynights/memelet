@@ -3,42 +3,46 @@
 # Set PATH to include standard locations
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-# Configuration
-SCRIPT_DIR="/home/basil/memes"
-VENV_DIR="$SCRIPT_DIR/venv"
-LOCK_FILE="$SCRIPT_DIR/scan.lock"
-LOG_FILE="$SCRIPT_DIR/logs/scan.log"
+# Get script directory (works regardless of where it's installed)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Load environment variables
+# Load environment variables from .env
 if [ -f "$SCRIPT_DIR/.env" ]; then
-    export $(/bin/cat "$SCRIPT_DIR/.env" | /usr/bin/xargs)
+    export $(cat "$SCRIPT_DIR/.env" | grep -v '^#' | xargs)
 fi
 
-# Set timezone
-export TZ="Europe/Nicosia"
+# Use environment variables with defaults
+VENV_DIR="${VENV_DIR:-$SCRIPT_DIR/venv}"
+LOCK_FILE="${LOCK_FILE:-$SCRIPT_DIR/scan.lock}"
+LOG_DIR="${LOG_DIR:-$SCRIPT_DIR/logs}"
+LOG_FILE="$LOG_DIR/scan.log"
+TZ="${TZ:-UTC}"
+
+# Export timezone
+export TZ
 
 # Create logs directory if it doesn't exist
-/bin/mkdir -p "$SCRIPT_DIR/logs"
+mkdir -p "$LOG_DIR"
 
 # Check if already running
 if [ -f "$LOCK_FILE" ]; then
     # Check if the process is actually running
-    if /bin/ps -p $(/bin/cat "$LOCK_FILE") > /dev/null 2>&1; then
-        /bin/echo "$(/bin/date): Scan already running (PID: $(/bin/cat $LOCK_FILE)). Skipping." >> "$LOG_FILE"
+    if ps -p $(cat "$LOCK_FILE") > /dev/null 2>&1; then
+        echo "$(date): Scan already running (PID: $(cat $LOCK_FILE)). Skipping." >> "$LOG_FILE"
         exit 0
     else
         # Stale lock file, remove it
-        /bin/rm "$LOCK_FILE"
+        rm "$LOCK_FILE"
     fi
 fi
 
 # Create lock file with current PID
-/bin/echo $$ > "$LOCK_FILE"
+echo $$ > "$LOCK_FILE"
 
 # Log start
-/bin/echo "================================" >> "$LOG_FILE"
-/bin/echo "$(/bin/date): Starting scan and process" >> "$LOG_FILE"
-/bin/echo "================================" >> "$LOG_FILE"
+echo "================================" >> "$LOG_FILE"
+echo "$(date): Starting scan and process" >> "$LOG_FILE"
+echo "================================" >> "$LOG_FILE"
 
 # Activate virtual environment and run script
 cd "$SCRIPT_DIR"
@@ -46,8 +50,8 @@ source "$VENV_DIR/bin/activate"
 python3 process_memes.py --scan --process >> "$LOG_FILE" 2>&1
 
 # Log completion
-/bin/echo "$(/bin/date): Scan and process completed" >> "$LOG_FILE"
-/bin/echo "" >> "$LOG_FILE"
+echo "$(date): Scan and process completed" >> "$LOG_FILE"
+echo "" >> "$LOG_FILE"
 
 # Remove lock file
-/bin/rm "$LOCK_FILE"
+rm "$LOCK_FILE"

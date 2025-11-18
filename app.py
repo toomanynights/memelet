@@ -13,6 +13,7 @@ import os
 import hashlib
 import subprocess
 from datetime import datetime, timedelta
+from config import get_db_path, get_memes_url_base, get_memes_dir, get_log_dir, get_script_dir, get_venv_dir, get_host, get_port
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
@@ -43,9 +44,10 @@ def load_user(user_id):
         return User(row['id'], row['username'])
     return None
 
-DB_PATH = "memelet.db"
-MEMES_URL_BASE = "https://memes.tmn.name/files/"
-FILES_DIR = Path("files")
+# Configuration - reads from app.config (multi-tenant) or env vars (standalone)
+DB_PATH = get_db_path()
+MEMES_URL_BASE = get_memes_url_base()
+FILES_DIR = Path(get_memes_dir())
 ALBUMS_DIR = FILES_DIR / "_albums"
 
 # Ensure directories exist
@@ -278,7 +280,7 @@ def index():
         meme_id = row['id']
         media_type = row['media_type']
         file_path_obj = Path(row['file_path'])
-        memes_dir = "/home/basil/memes/files"
+        memes_dir = get_memes_dir()
         
         # Calculate relative path for proper URLs
         try:
@@ -491,7 +493,7 @@ def meme_detail(meme_id):
     file_name = Path(row['file_path']).name
     file_path_obj = Path(row['file_path'])
     media_type = row['media_type']
-    memes_dir = "/home/basil/memes/files"
+    memes_dir = get_memes_dir()
     
     # Build proper URLs based on media type
     if media_type == 'video':
@@ -939,7 +941,7 @@ def settings():
     import os
     
     # Read log file - get last complete entry
-    log_path = "/home/basil/memes/logs/scan.log"
+    log_path = os.path.join(get_log_dir(), "scan.log")
     log_content = ""
     
     if os.path.exists(log_path):
@@ -981,8 +983,9 @@ def trigger_action():
     
     if action == 'scan':
         # Run scan and process in background
+        script_dir = get_script_dir()
         subprocess.Popen(
-            ['/home/basil/memes/run_scan.sh'],
+            [os.path.join(script_dir, 'run_scan.sh')],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True
@@ -991,8 +994,9 @@ def trigger_action():
     
     elif action == 'retry_errors':
         # Run retry errors in background using dedicated script
+        script_dir = get_script_dir()
         subprocess.Popen(
-            ['/home/basil/memes/retry_errors.sh'],
+            [os.path.join(script_dir, 'retry_errors.sh')],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True
@@ -1003,10 +1007,11 @@ def trigger_action():
         # Run tags-only scan for all memes using process_memes.py
         import os
         from datetime import datetime
-        script_dir = "/home/basil/memes"
-        venv_python = f"{script_dir}/venv/bin/python"
-        script_path = f"{script_dir}/process_memes.py"
-        log_file = f"{script_dir}/logs/scan.log"
+        script_dir = get_script_dir()
+        venv_dir = get_venv_dir()
+        venv_python = os.path.join(venv_dir, "bin", "python")
+        script_path = os.path.join(script_dir, "process_memes.py")
+        log_file = os.path.join(get_log_dir(), "scan.log")
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
         try:
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1035,10 +1040,11 @@ def scan_tags_single_meme(meme_id: int):
     import subprocess, os
     from datetime import datetime
 
-    script_dir = "/home/basil/memes"
-    venv_python = f"{script_dir}/venv/bin/python"
-    script_path = f"{script_dir}/process_memes.py"
-    log_file = f"{script_dir}/logs/scan.log"
+    script_dir = get_script_dir()
+    venv_dir = get_venv_dir()
+    venv_python = os.path.join(venv_dir, "bin", "python")
+    script_path = os.path.join(script_dir, "process_memes.py")
+    log_file = os.path.join(get_log_dir(), "scan.log")
 
     # Ensure logs directory exists
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -1081,10 +1087,11 @@ def bulk_scan_tags():
 
     ids_str = ",".join(id_list)
 
-    script_dir = "/home/basil/memes"
-    venv_python = f"{script_dir}/venv/bin/python"
-    script_path = f"{script_dir}/process_memes.py"
-    log_file = f"{script_dir}/logs/scan.log"
+    script_dir = get_script_dir()
+    venv_dir = get_venv_dir()
+    venv_python = os.path.join(venv_dir, "bin", "python")
+    script_path = os.path.join(script_dir, "process_memes.py")
+    log_file = os.path.join(get_log_dir(), "scan.log")
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
     try:
         with open(log_file, 'a', encoding='utf-8') as lf:
@@ -1108,7 +1115,7 @@ def bulk_scan_tags():
 def job_status(job_id: str):
     """Return scan-tag job status by scanning the log for the COMPLETE marker."""
     import os, re
-    log_file = "/home/basil/memes/logs/scan.log"
+    log_file = os.path.join(get_log_dir(), "scan.log")
     if not os.path.exists(log_file):
         return {'success': True, 'status': 'pending'}
 
@@ -1135,10 +1142,11 @@ def process_single_meme(meme_id: int):
     import subprocess, os
     from datetime import datetime
 
-    script_dir = "/home/basil/memes"
-    venv_python = f"{script_dir}/venv/bin/python"
-    script_path = f"{script_dir}/process_memes.py"
-    log_file = f"{script_dir}/logs/scan.log"
+    script_dir = get_script_dir()
+    venv_dir = get_venv_dir()
+    venv_python = os.path.join(venv_dir, "bin", "python")
+    script_path = os.path.join(script_dir, "process_memes.py")
+    log_file = os.path.join(get_log_dir(), "scan.log")
 
     # Mark meme as processing in DB
     try:
@@ -1796,4 +1804,4 @@ def upload_files():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=5000, debug=False)
+    app.run(host=get_host(), port=get_port(), debug=False)

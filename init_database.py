@@ -4,8 +4,9 @@ Initialize the Memelet database
 """
 import sqlite3
 from pathlib import Path
+from config import get_db_path
 
-DB_PATH = "memelet.db"
+DB_PATH = get_db_path()
 
 def init_database():
     """Create the database and tables if they don't exist"""
