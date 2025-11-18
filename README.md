@@ -18,7 +18,7 @@ Your personal meme collection manager with AI-powered descriptions.
 
 ```bash
 # Clone or download Memelet
-git clone <repository-url> memelet
+git clone "https://github.com/toomanynights/memelet" memelet
 cd memelet
 
 # Run the interactive installer
