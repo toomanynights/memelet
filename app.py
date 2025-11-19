@@ -45,7 +45,7 @@ def load_user(user_id):
     return None
 
 # Configuration - reads from app.config (multi-tenant) or env vars (standalone)
-DB_PATH = get_db_path()
+# Note: Don't cache DB_PATH at import time - it needs to be dynamic for multi-tenant
 MEMES_URL_BASE = get_memes_url_base()
 FILES_DIR = Path(get_memes_dir())
 ALBUMS_DIR = FILES_DIR / "_albums"
@@ -114,8 +114,9 @@ def logout():
     return redirect(url_for('login'))
 
 def get_db_connection():
-    """Get database connection"""
-    conn = sqlite3.connect(DB_PATH)
+    """Get database connection with dynamic path for multi-tenant support"""
+    db_path = get_db_path()  # Get path fresh each time
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
