@@ -16,7 +16,7 @@ import cv2
 import hashlib
 from config import get_db_path, get_memes_dir, get_memes_url_base
 
-DB_PATH = get_db_path()
+# DB_PATH removed - now using dynamic get_db_path() for multi-tenant support
 MEMES_DIR = get_memes_dir()
 TEMP_FRAMES_DIR = str(Path(MEMES_DIR) / '_system' / 'temp' / 'video_frames')
 TEMP_FRAMES_URL = f"{get_memes_url_base()}_system/temp/video_frames"
@@ -82,8 +82,9 @@ def _normalize_for_db(value):
         return str(value)
 
 def get_db_connection():
-    """Get database connection"""
-    return sqlite3.connect(DB_PATH, timeout=10)
+    """Get database connection with dynamic path for multi-tenant support"""
+    db_path = get_db_path()  # Get path fresh each time
+    return sqlite3.connect(db_path, timeout=10)
 
 def get_replicate_api_key():
     """Get Replicate API key from database settings"""

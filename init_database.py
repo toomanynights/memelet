@@ -6,11 +6,12 @@ import sqlite3
 from pathlib import Path
 from config import get_db_path
 
-DB_PATH = get_db_path()
+# DB_PATH removed - now using dynamic get_db_path() for multi-tenant support
 
 def init_database():
     """Create the database and tables if they don't exist"""
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()  # Get path fresh each time for multi-tenant support
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     # Create memes table (base columns)
