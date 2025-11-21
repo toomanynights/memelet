@@ -16,8 +16,8 @@
 <body>
     <div class="container">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <a href="/" class="back-button">← Back to Collection</a>
-            <a href="/logout" class="back-button" style="margin-left: auto;">🚪 Logout</a>
+            <a href="{{ base_url }}/" class="back-button">← Back to Collection</a>
+            <a href="{{ base_url }}/logout" class="back-button" style="margin-left: auto;">🚪 Logout</a>
         </div>
         
         <h1>⚙️ Settings</h1>
@@ -164,7 +164,7 @@
             showMessage('Starting process... Check the log below for progress.', 'success');
             
             // Trigger action via AJAX
-            fetch('/api/trigger-action', {
+            fetch(`${BASE_URL}/api/trigger-action`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -213,7 +213,7 @@
         let lastLogContent = '';
         
         function checkIfProcessingComplete() {
-            fetch('/settings')
+            fetch(`${BASE_URL}/settings`)
                 .then(response => response.text())
                 .then(html => {
                     const parser = new DOMParser();
@@ -236,7 +236,7 @@
         // Auto-refresh log every 5 seconds
         setInterval(function() {
             if (!isProcessing) {
-                fetch('/settings')
+                fetch(`${BASE_URL}/settings`)
                     .then(response => response.text())
                     .then(html => {
                         const parser = new DOMParser();
@@ -251,12 +251,15 @@
     
     <!-- API Key Management Script -->
     <script>
+        // Get base URL for API calls (for multi-tenant support)
+        const BASE_URL = '{{ base_url }}';
+        
         let currentApiKey = '';
         let hasExistingKey = false;
         
         // Load current API key on page load
         function loadApiKey() {
-            fetch('/api/settings/replicate-api-key')
+            fetch(`${BASE_URL}/api/settings/replicate-api-key`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -323,7 +326,7 @@
                 return;
             }
             
-            fetch('/api/settings/replicate-api-key', {
+            fetch(`${BASE_URL}/api/settings/replicate-api-key`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ api_key: apiKey })
@@ -465,7 +468,7 @@
         let currentClippyAgent = null;
         
         function selectAgent(agentName) {
-            fetch('/api/settings/clippy-agent', {
+            fetch(`${BASE_URL}/api/settings/clippy-agent`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ agent_form: agentName })
@@ -660,7 +663,7 @@
         }
         
         // Load agents and render selector
-        fetch('/api/clippy-agents')
+        fetch(`${BASE_URL}/api/clippy-agents`)
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -754,7 +757,7 @@
             }
             
             // Send request
-            fetch('/api/settings/change-password', {
+            fetch(`${BASE_URL}/api/settings/change-password`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -806,7 +809,7 @@
         });
         
         // Load and set privacy mode
-        fetch('/api/settings/privacy-mode')
+        fetch(`${BASE_URL}/api/settings/privacy-mode`)
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
@@ -825,7 +828,7 @@
                 const messageDiv = document.getElementById('privacy-mode-message');
                 messageDiv.innerHTML = '';
                 
-                fetch('/api/settings/privacy-mode', {
+                fetch(`${BASE_URL}/api/settings/privacy-mode`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'

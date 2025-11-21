@@ -19,7 +19,10 @@ from config import get_db_path, get_memes_dir, get_memes_url_base
 # DB_PATH removed - now using dynamic get_db_path() for multi-tenant support
 MEMES_DIR = get_memes_dir()
 TEMP_FRAMES_DIR = str(Path(MEMES_DIR) / '_system' / 'temp' / 'video_frames')
-TEMP_FRAMES_URL = f"{get_memes_url_base()}_system/temp/video_frames"
+
+def get_temp_frames_url():
+    """Get temporary frames URL dynamically for multi-tenant support"""
+    return f"{get_memes_url_base()}_system/temp/video_frames"
 
 SYSTEM_PROMPT = (
     "You're a meme expert. You're very smart and see meanings between the lines. "
@@ -897,7 +900,7 @@ def extract_gif_frames(gif_path, max_frames=10):
             img.convert('RGB').save(frame_path, 'JPEG', quality=85)
             
             # Build web-accessible URL
-            frame_url = f"{TEMP_FRAMES_URL}/{gif_name}/frame_{idx:03d}.jpg"
+            frame_url = f"{get_temp_frames_url()}/{gif_name}/frame_{idx:03d}.jpg"
             extracted_frames.append(frame_url)
         
         print(f"  ✓ Extracted {len(extracted_frames)} frames from GIF")
@@ -972,7 +975,7 @@ def extract_video_frames(video_path, fps=2, max_frames=20):
                     print(f"  ✓ Saved thumbnail: {thumbnail_path.name}")
                 
                 # Build web-accessible URL
-                frame_url = f"{TEMP_FRAMES_URL}/{video_name}/frame_{saved_count:03d}.jpg"
+                frame_url = f"{get_temp_frames_url()}/{video_name}/frame_{saved_count:03d}.jpg"
                 extracted_frames.append(frame_url)
                 saved_count += 1
             
@@ -1432,8 +1435,9 @@ def main():
         return
     
     # Check if database exists
-    if not Path(DB_PATH).exists():
-        print(f"❌ Database not found. Please run init_database.py first!")
+    db_path = get_db_path()  # Get path dynamically for multi-tenant support
+    if not Path(db_path).exists():
+        print(f"❌ Database not found at {db_path}. Please run init_database.py first!")
         return
     
     # Setup Replicate API from database (for operations that need it)

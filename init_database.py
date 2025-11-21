@@ -39,6 +39,8 @@ def init_database():
         cursor.execute("ALTER TABLE memes ADD COLUMN title TEXT")
     if 'ref_content' not in meme_cols:
         cursor.execute("ALTER TABLE memes ADD COLUMN ref_content TEXT")
+    if 'file_hash' not in meme_cols:
+        cursor.execute("ALTER TABLE memes ADD COLUMN file_hash TEXT")
 
     # Create index on status for faster queries
     cursor.execute("""
@@ -62,6 +64,12 @@ def init_database():
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_album_items_album ON album_items(album_id)
     """)
+
+    # Runtime-safe column migrations for album_items
+    cursor.execute("PRAGMA table_info(album_items)")
+    album_cols = {row[1] for row in cursor.fetchall()}
+    if 'file_hash' not in album_cols:
+        cursor.execute("ALTER TABLE album_items ADD COLUMN file_hash TEXT")
 
     # Tags
     cursor.execute("""
@@ -137,10 +145,10 @@ def init_database():
     conn.commit()
     conn.close()
     
-    print(f"✅ Database initialized at: {Path(DB_PATH).resolve()}")
+    print(f"✅ Database initialized at: {Path(db_path).resolve()}")
     print(f"📊 Tables ensured:")
-    print("   - memes: id, file_path, file_size, status, media_type, title, ref_content, template, caption, description, meaning, error_message, created_at, updated_at")
-    print("   - album_items: id, album_id, file_path, display_order, file_size")
+    print("   - memes: id, file_path, file_size, status, media_type, title, ref_content, file_hash, template, caption, description, meaning, error_message, created_at, updated_at")
+    print("   - album_items: id, album_id, file_path, display_order, file_size, file_hash")
     print("   - tags: id, name, description, color, parse_from_filename, ai_can_suggest, created_at")
     print("   - meme_tags: meme_id, tag_id")
     print("   - settings: key, value")

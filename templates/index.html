@@ -28,12 +28,12 @@
                 <button class="header-button menu" title="Menu" onclick="toggleDropdownMenu()">⋮</button>
                 <div class="dropdown-menu" id="dropdownMenu">
                     {% if current_user.is_authenticated %}
-                    <a href="/settings"><span class="dropdown-icon">⚙️</span> Settings</a>
-                    <a href="/tags"><span class="dropdown-icon">🏷️</span> Tags</a>
+                    <a href="{{ base_url }}/settings"><span class="dropdown-icon">⚙️</span> Settings</a>
+                    <a href="{{ base_url }}/tags"><span class="dropdown-icon">🏷️</span> Tags</a>
                     <a href="#" onclick="event.preventDefault(); openUploadModal();"><span class="dropdown-icon">📤</span> Upload</a>
-                    <a href="/logout"><span class="dropdown-icon">🚪</span> Logout</a>
+                    <a href="{{ base_url }}/logout"><span class="dropdown-icon">🚪</span> Logout</a>
                     {% else %}
-                    <a href="/login"><span class="dropdown-icon">🔑</span> Sign In</a>
+                    <a href="{{ base_url }}/login"><span class="dropdown-icon">🔑</span> Sign In</a>
                     {% endif %}
                 </div>
             </div>
@@ -170,7 +170,7 @@
                 {% if current_user.is_authenticated %}
                 <input type="checkbox" class="meme-checkbox" data-id="{{ meme.id }}" onclick="toggleBulkActions(event)">
                 {% endif %}
-                <a href="/meme/{{ meme.id }}?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if tag_filter %}tag={{ tag_filter }}&{% endif %}{% if media_filter %}media={{ media_filter }}{% endif %}" class="meme-card">
+                <a href="{{ base_url }}/meme/{{ meme.id }}?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if tag_filter %}tag={{ tag_filter }}&{% endif %}{% if media_filter %}media={{ media_filter }}{% endif %}" class="meme-card">
                     <div style="position: relative;">
                         {% if meme.media_type == 'album' %}
                         <div class="album-collage">
@@ -580,7 +580,7 @@
                 handleUploadError('Network error during upload');
             });
             
-            xhr.open('POST', '/api/upload', true);
+            xhr.open('POST', `${BASE_URL}/api/upload`, true);
             xhr.send(formData);
             
             document.getElementById('uploadStatus').textContent = 'Uploading files...';
@@ -603,7 +603,7 @@
             
             const checkStatus = () => {
                 Promise.all(memeIds.map(id => 
-                    fetch(`/api/memes/${id}?t=${Date.now()}`, { cache: 'no-store' })
+                    fetch(`${BASE_URL}/api/memes/${id}?t=${Date.now()}`, { cache: 'no-store' })
                         .then(r => r.json())
                 )).then(responses => {
                     completedCount = responses.filter(r => 
@@ -623,9 +623,9 @@
                             
                             // Redirect based on count
                             if (memeIds.length === 1) {
-                                window.location.href = `/meme/${memeIds[0]}`;
+                                window.location.href = `${BASE_URL}/meme/${memeIds[0]}`;
                             } else {
-                                window.location.href = '/';
+                                window.location.href = `${BASE_URL}/`;
                             }
                         }, 1500);
                     } else {
@@ -647,6 +647,9 @@
     </script>
     
     <script>
+        // Get base URL for API calls (for multi-tenant support)
+        const BASE_URL = '{{ base_url }}';
+        
         let initialFullTags = [];
         let initialPartialTags = [];
         let userChangedTags = new Set();
@@ -758,7 +761,7 @@
             });
             
             // Fetch current tags for selected memes
-            fetch('/api/bulk-memes-tags', {
+            fetch(`${BASE_URL}/api/bulk-memes-tags`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ meme_ids: selected })
@@ -832,7 +835,7 @@
                 return;
             }
             
-            fetch('/api/bulk-tags', {
+            fetch(`${BASE_URL}/api/bulk-tags`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -867,7 +870,7 @@
             
             if (!confirm(message)) return;
             
-            fetch('/api/bulk-delete', {
+            fetch(`${BASE_URL}/api/bulk-delete`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids: selected })
@@ -916,7 +919,7 @@
         }
 
         function startTagScanJobForCard(memeId, onDone){
-            fetch(`/api/memes/${memeId}/scan-tags`, {
+            fetch(`${BASE_URL}/api/memes/${memeId}/scan-tags`, {
                 method: 'POST',
                 headers: { 'Accept': 'application/json' }
             })
@@ -945,7 +948,7 @@
             let ticks = 0;
             const maxTicks = 120;
             const tick = () => {
-                fetch(`/api/jobs/${jobId}/status?t=${Date.now()}`, { cache: 'no-store' })
+                fetch(`${BASE_URL}/api/jobs/${jobId}/status?t=${Date.now()}`, { cache: 'no-store' })
                   .then(r => r.json())
                   .then(data => {
                       if (!data || !data.success) throw new Error('Status fetch failed');
@@ -972,7 +975,7 @@
         }
 
         function refreshCardTags(memeId){
-            fetch(`/api/memes/${memeId}?t=${Date.now()}`, { cache: 'no-store' })
+            fetch(`${BASE_URL}/api/memes/${memeId}?t=${Date.now()}`, { cache: 'no-store' })
               .then(r => r.json())
               .then(data => {
                   if (!data || !data.success || !data.meme) return;

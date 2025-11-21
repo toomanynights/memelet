@@ -45,14 +45,27 @@ def load_user(user_id):
     return None
 
 # Configuration - reads from app.config (multi-tenant) or env vars (standalone)
-# Note: Don't cache DB_PATH at import time - it needs to be dynamic for multi-tenant
-MEMES_URL_BASE = get_memes_url_base()
-FILES_DIR = Path(get_memes_dir())
-ALBUMS_DIR = FILES_DIR / "_albums"
+# Note: Don't cache paths at import time - they need to be dynamic for multi-tenant
 
-# Ensure directories exist
-FILES_DIR.mkdir(exist_ok=True)
-ALBUMS_DIR.mkdir(exist_ok=True)
+def get_memes_url_base_dynamic():
+    """Get memes URL base dynamically for multi-tenant support"""
+    return get_memes_url_base()
+
+def get_files_dir():
+    """Get files directory path dynamically for multi-tenant support"""
+    return Path(get_memes_dir())
+
+def get_albums_dir():
+    """Get albums directory path dynamically for multi-tenant support"""
+    return get_files_dir() / "_albums"
+
+def ensure_directories_exist():
+    """Ensure required directories exist"""
+    files_dir = get_files_dir()
+    albums_dir = get_albums_dir()
+    files_dir.mkdir(parents=True, exist_ok=True)
+    albums_dir.mkdir(parents=True, exist_ok=True)
+    return files_dir, albums_dir
 
 # File type validation
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
@@ -60,9 +73,34 @@ GIF_EXTENSIONS = {'.gif'}
 VIDEO_EXTENSIONS = {'.mp4', '.webm', '.mov', '.avi'}
 ALL_MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | GIF_EXTENSIONS | VIDEO_EXTENSIONS
 
+@app.before_request
+def set_instance_paths_and_url_root():
+    """Set SCRIPT_NAME and APPLICATION_ROOT for URL generation in multi-tenant setup"""
+    # Set SCRIPT_NAME for URL generation to include the instance prefix
+    # This is crucial for url_for to generate correct URLs like /for/username/login
+    if 'INSTANCE_NAME' in app.config:
+        instance_name = app.config['INSTANCE_NAME']
+        request.environ['SCRIPT_NAME'] = f'/for/{instance_name}'
+        app.config['APPLICATION_ROOT'] = f'/for/{instance_name}' # Re-added this for Flask-Login
+
+    # Log authentication state for debugging
+    if current_user.is_authenticated:
+        app.logger.info(f"Auth state: authenticated=True, user_id={current_user.id}")
+    else:
+        app.logger.info(f"Auth state: authenticated=False, user_id=None")
+
 @app.route('/favicon.ico')
 def favicon():
     return send_from_directory(app.static_folder, 'favicon.ico', mimetype='image/x-icon')
+
+@app.route('/files/<path:filename>')
+def serve_meme_file(filename):
+    """Serve meme files from the memes directory"""
+    try:
+        files_dir = get_files_dir()
+        return send_from_directory(files_dir, filename)
+    except FileNotFoundError:
+        return "File not found", 404
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -297,17 +335,17 @@ def index():
                 # Build thumbnail path in _system/thumbnails
                 parent_relative = file_path_obj.parent.relative_to(Path(memes_dir))
                 thumbnail_relative = Path('_system') / 'thumbnails' / parent_relative / f"{video_stem}_preview.gif"
-                image_url = MEMES_URL_BASE + thumbnail_relative.as_posix()
+                image_url = get_memes_url_base_dynamic() + thumbnail_relative.as_posix()
             except ValueError:
                 # Fallback if path isn't relative to memes_dir
-                image_url = MEMES_URL_BASE + f"_system/thumbnails/{video_stem}_preview.gif"
-            video_url = MEMES_URL_BASE + relative_path_str
+                image_url = get_memes_url_base_dynamic() + f"_system/thumbnails/{video_stem}_preview.gif"
+            video_url = get_memes_url_base_dynamic() + relative_path_str
         elif media_type == 'gif':
             # Use the actual GIF (it will animate)
-            image_url = MEMES_URL_BASE + relative_path_str
-            video_url = MEMES_URL_BASE + relative_path_str
+            image_url = get_memes_url_base_dynamic() + relative_path_str
+            video_url = get_memes_url_base_dynamic() + relative_path_str
         else:
-            image_url = MEMES_URL_BASE + relative_path_str
+            image_url = get_memes_url_base_dynamic() + relative_path_str
             video_url = None
         
         album_previews = []
@@ -327,9 +365,9 @@ def index():
                 p_obj = Path(p)
                 try:
                     rel = p_obj.relative_to(Path(memes_dir))
-                    album_previews.append(MEMES_URL_BASE + rel.as_posix())
+                    album_previews.append(get_memes_url_base_dynamic() + rel.as_posix())
                 except ValueError:
-                    album_previews.append(MEMES_URL_BASE + p_obj.name)
+                    album_previews.append(get_memes_url_base_dynamic() + p_obj.name)
 
         # Get tags for this meme
         cursor.execute("""
@@ -377,6 +415,9 @@ def index():
     
     conn.close()
     
+    # Get base URL for API calls (for multi-tenant support)
+    base_url = request.environ.get('SCRIPT_NAME', '')
+    
     return render_template(
         'index.html', 
         memes=memes, 
@@ -392,7 +433,8 @@ def index():
         total_pages=total_pages,
         show_pagination=total_pages > 1,
         clippy_agent=get_clippy_agent(),
-        is_public_mode=is_public_mode()
+        is_public_mode=is_public_mode(),
+        base_url=base_url
     )
 
 @app.route('/meme/<int:meme_id>', methods=['GET', 'POST'])
@@ -502,14 +544,14 @@ def meme_detail(meme_id):
         video_stem = file_path_obj.stem
         try:
             relative_path = file_path_obj.relative_to(Path(memes_dir))
-            video_url = MEMES_URL_BASE + relative_path.as_posix()
+            video_url = get_memes_url_base_dynamic() + relative_path.as_posix()
             # Build thumbnail path in _system/thumbnails
             parent_relative = relative_path.parent
             thumbnail_relative = Path('_system') / 'thumbnails' / parent_relative / f"{video_stem}_thumb.jpg"
-            image_url = MEMES_URL_BASE + thumbnail_relative.as_posix()
+            image_url = get_memes_url_base_dynamic() + thumbnail_relative.as_posix()
         except ValueError:
-            video_url = MEMES_URL_BASE + file_name
-            image_url = MEMES_URL_BASE + f"_system/thumbnails/{video_stem}_thumb.jpg"
+            video_url = get_memes_url_base_dynamic() + file_name
+            image_url = get_memes_url_base_dynamic() + f"_system/thumbnails/{video_stem}_thumb.jpg"
     elif media_type == 'album':
         # For albums, no single image; compute first item as default image
         cursor.execute(
@@ -526,18 +568,18 @@ def meme_detail(meme_id):
             p_obj = Path(p)
             try:
                 rel = p_obj.relative_to(Path(memes_dir))
-                album_item_urls.append(MEMES_URL_BASE + rel.as_posix())
+                album_item_urls.append(get_memes_url_base_dynamic() + rel.as_posix())
             except ValueError:
-                album_item_urls.append(MEMES_URL_BASE + p_obj.name)
+                album_item_urls.append(get_memes_url_base_dynamic() + p_obj.name)
         image_url = album_item_urls[0] if album_item_urls else None
         video_url = None
     else:
         # For images/gifs, calculate relative path for URL
         try:
             relative_path = file_path_obj.relative_to(Path(memes_dir))
-            image_url = MEMES_URL_BASE + relative_path.as_posix()
+            image_url = get_memes_url_base_dynamic() + relative_path.as_posix()
         except ValueError:
-            image_url = MEMES_URL_BASE + file_name
+            image_url = get_memes_url_base_dynamic() + file_name
         video_url = None
     
     meme = {
@@ -709,8 +751,12 @@ def meme_detail(meme_id):
         query_params.append(f"media={media_filter}")
     query_string = "&" + "&".join(query_params) if query_params else ""
     
+    # Get base URL for API calls (for multi-tenant support)
+    base_url = request.environ.get('SCRIPT_NAME', '')
+    
     return render_template('meme_detail.html', meme=meme, album_items=album_items, saved=saved, all_tags=all_tags, current_tags=current_tags,
-                          prev_id=prev_id, next_id=next_id, query_string=query_string, clippy_agent=get_clippy_agent(), is_public_mode=is_public_mode())
+                          prev_id=prev_id, next_id=next_id, query_string=query_string, clippy_agent=get_clippy_agent(), is_public_mode=is_public_mode(),
+                          base_url=base_url)
 
 @app.route('/api/memes/<int:meme_id>', methods=['DELETE'])
 @login_required
@@ -971,7 +1017,14 @@ def settings():
     # Get current agent selection
     current_agent = get_clippy_agent()
     
-    return render_template('settings.html', log_content=log_content, current_agent=current_agent, username=current_user.username)
+    # Get base URL for API calls (for multi-tenant support)
+    base_url = request.environ.get('SCRIPT_NAME', '')
+    
+    return render_template('settings.html', 
+                         log_content=log_content, 
+                         current_agent=current_agent, 
+                         username=current_user.username,
+                         base_url=base_url)
 
 @app.route('/api/trigger-action', methods=['POST'])
 @login_required
@@ -985,45 +1038,129 @@ def trigger_action():
     if action == 'scan':
         # Run scan and process in background
         script_dir = get_script_dir()
-        subprocess.Popen(
-            [os.path.join(script_dir, 'run_scan.sh')],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True
-        )
-        return {'success': True, 'message': 'Scan started in background!'}
+        log_dir = get_log_dir()
+        
+        # Check if Replicate API key is configured
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = 'replicate_api_key'")
+        api_key_row = cursor.fetchone()
+        conn.close()
+        
+        if not api_key_row or not api_key_row[0].strip():
+            return {'success': False, 'message': 'Replicate API key not configured. Please set it in Settings first.'}
+        
+        try:
+            # Set up environment variables for the shell script
+            env = os.environ.copy()
+            env['SCRIPT_DIR'] = script_dir  # Instance directory (for files, logs, etc.)
+            env['LOG_DIR'] = log_dir
+            env['DB_PATH'] = get_db_path()
+            env['MEMES_DIR'] = get_memes_dir()
+            env['MEMES_URL_BASE'] = get_memes_url_base()  # Critical for Replicate API image URLs
+            env['VENV_DIR'] = get_venv_dir()
+            
+            # Shell script is in the shared branch directory for multi-tenant
+            if 'INSTANCE_NAME' in app.config:
+                # Multi-tenant mode: script is in shared branch directory
+                branch = 'main'  # TODO: Get from config if needed
+                branch_shared_dir = Path(script_dir).parent.parent / 'branches' / branch / 'shared'
+                shell_script = str(branch_shared_dir / 'run_scan.sh')
+            else:
+                # Standalone mode: script is in same directory
+                shell_script = os.path.join(script_dir, 'run_scan.sh')
+            
+            subprocess.Popen(
+                [shell_script],
+                stdout=subprocess.DEVNULL,
+                stderr=open(os.path.join(log_dir, 'scan_errors.log'), 'a'),
+                env=env,
+                start_new_session=True
+            )
+            return {'success': True, 'message': 'Scan started in background! Check logs for progress.'}
+        except Exception as e:
+            return {'success': False, 'message': f'Failed to start scan: {str(e)}'}
     
     elif action == 'retry_errors':
         # Run retry errors in background using dedicated script
         script_dir = get_script_dir()
-        subprocess.Popen(
-            [os.path.join(script_dir, 'retry_errors.sh')],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True
-        )
-        return {'success': True, 'message': 'Error reprocessing started in background!'}
+        log_dir = get_log_dir()
+        
+        try:
+            # Set up environment variables for the shell script
+            env = os.environ.copy()
+            env['SCRIPT_DIR'] = script_dir  # Instance directory (for files, logs, etc.)
+            env['LOG_DIR'] = log_dir
+            env['DB_PATH'] = get_db_path()
+            env['MEMES_DIR'] = get_memes_dir()
+            env['MEMES_URL_BASE'] = get_memes_url_base()  # Critical for Replicate API image URLs
+            env['VENV_DIR'] = get_venv_dir()
+            
+            # Shell script is in the shared branch directory for multi-tenant
+            if 'INSTANCE_NAME' in app.config:
+                # Multi-tenant mode: script is in shared branch directory
+                branch = 'main'  # TODO: Get from config if needed
+                branch_shared_dir = Path(script_dir).parent.parent / 'branches' / branch / 'shared'
+                shell_script = str(branch_shared_dir / 'retry_errors.sh')
+            else:
+                # Standalone mode: script is in same directory
+                shell_script = os.path.join(script_dir, 'retry_errors.sh')
+            
+            subprocess.Popen(
+                [shell_script],
+                stdout=subprocess.DEVNULL,
+                stderr=open(os.path.join(log_dir, 'scan_errors.log'), 'a'),
+                env=env,
+                start_new_session=True
+            )
+            return {'success': True, 'message': 'Error reprocessing started in background! Check logs for progress.'}
+        except Exception as e:
+            return {'success': False, 'message': f'Failed to start retry: {str(e)}'}
     
     elif action == 'scan_tags_all':
         # Run tags-only scan for all memes using process_memes.py
         import os
         from datetime import datetime
-        script_dir = get_script_dir()
+        instance_dir = get_script_dir()  # Instance directory
         venv_dir = get_venv_dir()
         venv_python = os.path.join(venv_dir, "bin", "python")
-        script_path = os.path.join(script_dir, "process_memes.py")
+        
+        # Process script is in the shared branch directory for multi-tenant
+        if 'INSTANCE_NAME' in app.config:
+            # Multi-tenant mode: script is in shared branch directory
+            branch = 'main'  # TODO: Get from config if needed
+            branch_shared_dir = Path(instance_dir).parent.parent / 'branches' / branch / 'shared'
+            script_path = str(branch_shared_dir / 'process_memes.py')
+            working_dir = str(branch_shared_dir)
+        else:
+            # Standalone mode: script is in same directory
+            script_path = os.path.join(instance_dir, 'process_memes.py')
+            working_dir = instance_dir
+        
         log_file = os.path.join(get_log_dir(), "scan.log")
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
         try:
+            # Set up environment variables for the Python script
+            env = os.environ.copy()
+            env['SCRIPT_DIR'] = instance_dir  # Instance directory (for files, logs, etc.)
+            env['LOG_DIR'] = get_log_dir()
+            env['DB_PATH'] = get_db_path()
+            env['MEMES_DIR'] = get_memes_dir()
+            env['MEMES_URL_BASE'] = get_memes_url_base()  # Critical for Replicate API image URLs
+            env['VENV_DIR'] = get_venv_dir()
+            
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(log_file, 'a', encoding='utf-8') as lf:
                 lf.write("================================\n")
                 lf.write(f"{ts}: Triggered tags-only scan for ALL memes via UI\n")
+                lf.write(f"Process script: {script_path}\n")
+                lf.write(f"Working dir: {working_dir}\n")
                 lf.write("================================\n")
                 python_exec = venv_python if os.path.exists(venv_python) else "python3"
                 subprocess.Popen(
                     [python_exec, script_path, '--scan-tags-all'],
-                    cwd=script_dir,
+                    cwd=working_dir,
+                    env=env,
                     stdout=lf,
                     stderr=lf,
                     start_new_session=True
@@ -1143,10 +1280,22 @@ def process_single_meme(meme_id: int):
     import subprocess, os
     from datetime import datetime
 
-    script_dir = get_script_dir()
+    instance_dir = get_script_dir()  # Instance directory
     venv_dir = get_venv_dir()
     venv_python = os.path.join(venv_dir, "bin", "python")
-    script_path = os.path.join(script_dir, "process_memes.py")
+    
+    # Process script is in the shared branch directory for multi-tenant
+    if 'INSTANCE_NAME' in app.config:
+        # Multi-tenant mode: script is in shared branch directory
+        branch = 'main'  # TODO: Get from config if needed
+        branch_shared_dir = Path(instance_dir).parent.parent / 'branches' / branch / 'shared'
+        script_path = str(branch_shared_dir / 'process_memes.py')
+        working_dir = str(branch_shared_dir)
+    else:
+        # Standalone mode: script is in same directory
+        script_path = os.path.join(instance_dir, 'process_memes.py')
+        working_dir = instance_dir
+    
     log_file = os.path.join(get_log_dir(), "scan.log")
 
     # Mark meme as processing in DB
@@ -1178,6 +1327,8 @@ def process_single_meme(meme_id: int):
         with open(log_file, 'a', encoding='utf-8') as lf:
             lf.write("================================\n")
             lf.write(f"{ts}: Triggered single meme processing via UI (id={meme_id})\n")
+            lf.write(f"Process script: {script_path}\n")
+            lf.write(f"Working dir: {working_dir}\n")
             lf.write("================================\n")
     except Exception:
         # Non-fatal
@@ -1185,18 +1336,70 @@ def process_single_meme(meme_id: int):
 
     # Launch processing in background, append stdout/stderr to log
     try:
+        # Set up environment variables for the processing script
+        env = os.environ.copy()
+        env['SCRIPT_DIR'] = instance_dir  # Instance directory (for files, logs, etc.)
+        env['LOG_DIR'] = get_log_dir()
+        env['DB_PATH'] = get_db_path()
+        env['MEMES_DIR'] = get_memes_dir()
+        env['MEMES_URL_BASE'] = get_memes_url_base()  # Critical for Replicate API image URLs
+        env['VENV_DIR'] = venv_dir
+        
         # Prefer venv python if exists, else rely on system python
         python_exec = venv_python if os.path.exists(venv_python) else "python3"
         with open(log_file, 'a', encoding='utf-8') as lf:
-            subprocess.Popen(
+            proc = subprocess.Popen(
                 [python_exec, script_path, '--process-one', str(meme_id)],
-                cwd=script_dir,
+                cwd=working_dir,
+                env=env,
                 stdout=lf,
                 stderr=lf,
                 start_new_session=True
             )
+            
+            # Start a background thread to monitor the process and update status on failure
+            def monitor_processing():
+                import threading
+                import time
+                try:
+                    # Wait for process to complete (max 60 seconds)
+                    exit_code = proc.wait(timeout=60)
+                    if exit_code != 0:
+                        # Processing failed, update meme status to error
+                        conn = get_db_connection()
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "UPDATE memes SET status='error', error_message=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                            (f"Manual processing failed with exit code {exit_code}", meme_id)
+                        )
+                        conn.commit()
+                        conn.close()
+                        lf.write(f"Updated meme {meme_id} status to error (exit code: {exit_code})\n")
+                except subprocess.TimeoutExpired:
+                    # Process is still running after 60 seconds, that's normal for processing
+                    pass
+                except Exception as monitor_error:
+                    lf.write(f"Error monitoring process for meme {meme_id}: {monitor_error}\n")
+            
+            # Start monitoring in a separate thread
+            import threading
+            monitor_thread = threading.Thread(target=monitor_processing, daemon=True)
+            monitor_thread.start()
+            
         return {'success': True, 'message': 'Processing started'}
     except Exception as e:
+        # If we can't even start processing, mark as error immediately
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE memes SET status='error', error_message=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (f"Failed to start manual processing: {str(e)}", meme_id)
+            )
+            conn.commit()
+            conn.close()
+        except Exception as db_error:
+            pass  # If DB update also fails, we can't do much
         return {'success': False, 'error': str(e)}, 500
 
 @app.route('/api/memes/<int:meme_id>', methods=['GET'])
@@ -1274,7 +1477,10 @@ def tags():
     
     conn.close()
     
-    return render_template('tags.html', tags=tags_list, clippy_agent=get_clippy_agent())
+    # Get base URL for API calls (for multi-tenant support)
+    base_url = request.environ.get('SCRIPT_NAME', '')
+    
+    return render_template('tags.html', tags=tags_list, clippy_agent=get_clippy_agent(), base_url=base_url)
 
 @app.route('/api/tags', methods=['POST'])
 @login_required
@@ -1631,6 +1837,9 @@ def upload_files():
         if not files or len(files) == 0:
             return jsonify({'success': False, 'error': 'No files provided'}), 400
         
+        # Ensure upload directories exist
+        ensure_directories_exist()
+        
         # Validate file types
         for file in files:
             if not file.filename:
@@ -1661,7 +1870,7 @@ def upload_files():
             # Create album directory with timestamp
             timestamp = datetime.now().strftime("%d%m%y-%H%M")
             album_name = f"album_{timestamp}"
-            album_dir = ALBUMS_DIR / album_name
+            album_dir = get_albums_dir() / album_name
             album_dir.mkdir(parents=True, exist_ok=True)
             
             # Save all files to album directory
@@ -1728,8 +1937,8 @@ def upload_files():
                     continue
                 
                 filename = secure_filename(file.filename)
-                unique_filename = get_unique_filename(FILES_DIR, filename)
-                file_path = FILES_DIR / unique_filename
+                unique_filename = get_unique_filename(get_files_dir(), filename)
+                file_path = get_files_dir() / unique_filename
                 
                 file.save(str(file_path))
                 
@@ -1772,25 +1981,98 @@ def upload_files():
                 
                 # Trigger processing for this meme
                 try:
-                    script_dir = os.path.dirname(os.path.abspath(__file__))
-                    process_script = os.path.join(script_dir, 'process_memes.py')
-                    log_file = os.path.join(script_dir, 'logs', 'scan.log')
+                    instance_dir = get_script_dir()  # Instance directory
+                    venv_dir = get_venv_dir()
+                    
+                    # Process script is in the shared branch directory, not instance directory
+                    # For multi-tenant: /var/memelet-instances/branches/main/shared/process_memes.py
+                    # For standalone: same directory as this script
+                    if 'INSTANCE_NAME' in app.config:
+                        # Multi-tenant mode: script is in shared branch directory
+                        branch = 'main'  # TODO: Get from config if needed
+                        branch_shared_dir = Path(instance_dir).parent.parent / 'branches' / branch / 'shared'
+                        process_script = str(branch_shared_dir / 'process_memes.py')
+                    else:
+                        # Standalone mode: script is in same directory
+                        process_script = os.path.join(instance_dir, 'process_memes.py')
+                    
+                    log_file = os.path.join(get_log_dir(), 'scan.log')
                     os.makedirs(os.path.dirname(log_file), exist_ok=True)
+                    
+                    # Set up environment variables for the processing script
+                    env = os.environ.copy()
+                    env['SCRIPT_DIR'] = instance_dir  # Instance directory (for files, logs, etc.)
+                    env['LOG_DIR'] = get_log_dir()
+                    env['DB_PATH'] = get_db_path()
+                    env['MEMES_DIR'] = get_memes_dir()
+                    env['MEMES_URL_BASE'] = get_memes_url_base()  # Critical for Replicate API image URLs
+                    env['VENV_DIR'] = venv_dir
+                    
+                    # Working directory should be where the process script is located
+                    working_dir = os.path.dirname(process_script)
                     
                     with open(log_file, 'a', encoding='utf-8') as lf:
                         lf.write("================================\n")
                         lf.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Processing uploaded meme (id={meme_id})\n")
+                        lf.write(f"Process script: {process_script}\n")
+                        lf.write(f"Working dir: {working_dir}\n")
                         lf.write("================================\n")
                         
-                        subprocess.Popen(
-                            ['python3', process_script, '--process-one', str(meme_id)],
-                            cwd=script_dir,
+                        python_exec = os.path.join(venv_dir, "bin", "python") if os.path.exists(os.path.join(venv_dir, "bin", "python")) else "python3"
+                        
+                        # Start processing in background with error monitoring
+                        proc = subprocess.Popen(
+                            [python_exec, process_script, '--process-one', str(meme_id)],
+                            cwd=working_dir,
+                            env=env,
                             stdout=lf,
                             stderr=lf,
                             start_new_session=True
                         )
+                        
+                        # Start a background thread to monitor the process and update status on failure
+                        def monitor_processing():
+                            import threading
+                            import time
+                            try:
+                                # Wait for process to complete (max 60 seconds)
+                                exit_code = proc.wait(timeout=60)
+                                if exit_code != 0:
+                                    # Processing failed, update meme status to error
+                                    conn = get_db_connection()
+                                    cursor = conn.cursor()
+                                    cursor.execute(
+                                        "UPDATE memes SET status='error', error_message=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                                        (f"Processing failed with exit code {exit_code}", meme_id)
+                                    )
+                                    conn.commit()
+                                    conn.close()
+                                    lf.write(f"Updated meme {meme_id} status to error (exit code: {exit_code})\n")
+                            except subprocess.TimeoutExpired:
+                                # Process is still running after 60 seconds, that's normal for processing
+                                pass
+                            except Exception as monitor_error:
+                                lf.write(f"Error monitoring process for meme {meme_id}: {monitor_error}\n")
+                        
+                        # Start monitoring in a separate thread
+                        import threading
+                        monitor_thread = threading.Thread(target=monitor_processing, daemon=True)
+                        monitor_thread.start()
+                        
                 except Exception as e:
                     print(f"Warning: Could not trigger processing for meme {meme_id}: {e}")
+                    # If we can't even start processing, mark as error immediately
+                    try:
+                        conn = get_db_connection()
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "UPDATE memes SET status='error', error_message=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                            (f"Failed to start processing: {str(e)}", meme_id)
+                        )
+                        conn.commit()
+                        conn.close()
+                    except Exception as db_error:
+                        print(f"Could not update meme {meme_id} status: {db_error}")
         
         conn.commit()
         conn.close()

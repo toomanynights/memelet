@@ -25,11 +25,11 @@
 <body>
     <div class="container">
         <div class="header">
-            <a href="/" class="back-button">← Back</a>
+            <a href="{{ base_url }}/" class="back-button">← Back</a>
             <h1>🏷️ Tag Management</h1>
             <div style="display: flex; gap: 10px; align-items: center;">
                 <button class="create-btn" onclick="openCreateModal()">+ Create Tag</button>
-                <a href="/logout" class="back-button" style="margin: 0;">🚪 Logout</a>
+                <a href="{{ base_url }}/logout" class="back-button" style="margin: 0;">🚪 Logout</a>
             </div>
         </div>
         
@@ -123,6 +123,9 @@
     </div>
     
     <script>
+        // Get base URL for API calls (for multi-tenant support)
+        const BASE_URL = '{{ base_url }}';
+        
         const COLORS = [
             '#EF4444', '#F97316', '#F59E0B', '#EAB308', '#84CC16',
             '#22C55E', '#10B981', '#14B8A6', '#06B6D4', '#0EA5E9',
@@ -234,7 +237,7 @@
         function deleteTag(id, name) {
             if (!confirm('Delete tag "' + name + '"? This will remove it from all memes.')) return;
             
-            fetch(`/api/tags/${id}`, {
+            fetch(`${BASE_URL}/api/tags/${id}`, {
                 method: 'DELETE'
             })
             .then(response => response.json())
@@ -265,7 +268,7 @@
                 ai_can_suggest: document.getElementById('aiSuggest').checked
             };
             
-            const url = tagId ? `/api/tags/${tagId}` : '/api/tags';
+            const url = tagId ? `${BASE_URL}/api/tags/${tagId}` : `${BASE_URL}/api/tags`;
             const method = tagId ? 'PUT' : 'POST';
             
             fetch(url, {
