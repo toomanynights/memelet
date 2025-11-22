@@ -156,6 +156,11 @@ def get_db_connection():
     db_path = get_db_path()  # Get path fresh each time
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+
+    # Register a custom Unicode-aware LOWER function for case-insensitive search
+    # This replaces SQLite's default LOWER which only works for ASCII
+    conn.create_function("LOWER", 1, lambda s: s.lower() if s else s)
+
     return conn
 
 def is_public_mode():
@@ -249,15 +254,16 @@ def index():
         params.append(media_filter)
     
     # Add search filter (search in all text fields, title and file path)
+    # Use custom LOWER function for Unicode-aware case-insensitive search
     if search_query:
         sql += """ AND (
-            m.file_path LIKE ? OR
-            m.title LIKE ? OR
-            m.ref_content LIKE ? OR
-            m.template LIKE ? OR
-            m.caption LIKE ? OR
-            m.description LIKE ? OR
-            m.meaning LIKE ?
+            LOWER(m.file_path) LIKE LOWER(?) OR
+            LOWER(m.title) LIKE LOWER(?) OR
+            LOWER(m.ref_content) LIKE LOWER(?) OR
+            LOWER(m.template) LIKE LOWER(?) OR
+            LOWER(m.caption) LIKE LOWER(?) OR
+            LOWER(m.description) LIKE LOWER(?) OR
+            LOWER(m.meaning) LIKE LOWER(?)
         )"""
         search_pattern = f"%{search_query}%"
         params.extend([search_pattern] * 7)
@@ -292,13 +298,13 @@ def index():
     # Add search filter to count query
     if search_query:
         count_sql += """ AND (
-            m.file_path LIKE ? OR
-            m.title LIKE ? OR
-            m.ref_content LIKE ? OR
-            m.template LIKE ? OR
-            m.caption LIKE ? OR
-            m.description LIKE ? OR
-            m.meaning LIKE ?
+            LOWER(m.file_path) LIKE LOWER(?) OR
+            LOWER(m.title) LIKE LOWER(?) OR
+            LOWER(m.ref_content) LIKE LOWER(?) OR
+            LOWER(m.template) LIKE LOWER(?) OR
+            LOWER(m.caption) LIKE LOWER(?) OR
+            LOWER(m.description) LIKE LOWER(?) OR
+            LOWER(m.meaning) LIKE LOWER(?)
         )"""
         search_pattern = f"%{search_query}%"
         count_params.extend([search_pattern] * 7)
@@ -651,24 +657,24 @@ def meme_detail(meme_id):
     if media_filter:
         nav_sql += " AND m.media_type = ?"
         nav_params.append(media_filter)
-    
+
     if search_query:
         nav_sql += """ AND (
-            m.file_path LIKE ? OR
-            m.ref_content LIKE ? OR
-            m.template LIKE ? OR
-            m.caption LIKE ? OR
-            m.description LIKE ? OR
-            m.meaning LIKE ?
+            LOWER(m.file_path) LIKE LOWER(?) OR
+            LOWER(m.ref_content) LIKE LOWER(?) OR
+            LOWER(m.template) LIKE LOWER(?) OR
+            LOWER(m.caption) LIKE LOWER(?) OR
+            LOWER(m.description) LIKE LOWER(?) OR
+            LOWER(m.meaning) LIKE LOWER(?)
         )"""
         search_pattern = f"%{search_query}%"
         nav_params.extend([search_pattern] * 6)
-    
+
     nav_sql += " ORDER BY m.created_at DESC"
-    
+
     cursor.execute(nav_sql, nav_params)
     all_filtered_ids = [r['id'] for r in cursor.fetchall()]
-    
+
     # Find current position and get prev/next
     prev_id = None
     next_id = None
@@ -681,7 +687,7 @@ def meme_detail(meme_id):
     except ValueError:
         # Current meme not in filtered list (shouldn't happen but handle it)
         pass
-    
+
     # Get prev/next meme IDs based on current filters
     # Build filtered query
     nav_sql = """
@@ -690,29 +696,29 @@ def meme_detail(meme_id):
         WHERE 1=1
     """
     nav_params = []
-    
+
     if status_filter:
         nav_sql += " AND m.status = ?"
         nav_params.append(status_filter)
-    
+
     if tag_filter:
         nav_sql += """ AND m.id IN (
             SELECT meme_id FROM meme_tags WHERE tag_id = ?
         )"""
         nav_params.append(tag_filter)
-    
+
     if media_filter:
         nav_sql += " AND m.media_type = ?"
         nav_params.append(media_filter)
-    
+
     if search_query:
         nav_sql += """ AND (
-            m.file_path LIKE ? OR
-            m.ref_content LIKE ? OR
-            m.template LIKE ? OR
-            m.caption LIKE ? OR
-            m.description LIKE ? OR
-            m.meaning LIKE ?
+            LOWER(m.file_path) LIKE LOWER(?) OR
+            LOWER(m.ref_content) LIKE LOWER(?) OR
+            LOWER(m.template) LIKE LOWER(?) OR
+            LOWER(m.caption) LIKE LOWER(?) OR
+            LOWER(m.description) LIKE LOWER(?) OR
+            LOWER(m.meaning) LIKE LOWER(?)
         )"""
         search_pattern = f"%{search_query}%"
         nav_params.extend([search_pattern] * 6)
