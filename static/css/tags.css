@@ -1,5 +1,9 @@
 /* Tags Page Specific Styles */
 
+.navigation {
+    margin-bottom: 30px;
+}
+
 .header {
     display: flex;
     justify-content: space-between;
@@ -175,5 +179,105 @@ textarea {
 textarea {
     min-height: 80px;
     resize: vertical;
+}
+
+/* Tags Page Button Styles */
+.tags-page .btn {
+    flex: 1;
+    padding: 12px;
+}
+
+/* Tags Page Header Wrapper - combines navigation and header on desktop */
+.tags-header-wrapper {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 20px;
+}
+
+.tags-navigation {
+    grid-column: 1;
+    display: flex;
+    gap: 10px;
+}
+
+.tags-header-wrapper h1 {
+    grid-column: 2;
+    text-align: center;
+    margin: 0;
+}
+
+/* Tags Page Header */
+.tags-header {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    grid-column: 3;
+}
+
+/* Navigation Buttons */
+.tags-navigation {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.tags-navigation .back-button {
+    margin-bottom: 0;
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 600px) {
+    .navigation {
+        margin-bottom: 20px;
+    }
+    
+    .tags-header-wrapper {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .tags-navigation {
+        grid-column: 1;
+        width: 100%;
+        flex-wrap: wrap;
+    }
+    
+    .tags-navigation .back-button {
+        flex: 1;
+        min-width: calc(50% - 5px);
+        text-align: center;
+    }
+    
+    .tags-header-wrapper h1 {
+        grid-column: 1;
+        width: 100%;
+    }
+    
+    .tags-header {
+        grid-column: 1;
+        width: 100%;
+        justify-content: stretch;
+    }
+    
+    .create-btn {
+        width: 100%;
+    }
+    
+    .tag-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .tag-actions {
+        width: 100%;
+        justify-content: flex-start;
+        margin-top: 10px;
+    }
+    
+    .tag-actions .btn-small {
+        flex: 1;
+    }
 }
 

@@ -158,3 +158,187 @@ h2 {
     color: #4a5568;
 }
 
+/* Privacy Mode Selector */
+.privacy-mode-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.privacy-mode-selector label {
+    display: flex;
+    align-items: center;
+    padding: 15px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.privacy-mode-selector label:first-child {
+    margin-bottom: 0;
+}
+
+.privacy-mode-selector label input[type="radio"] {
+    margin-right: 10px;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.privacy-mode-selector label > div {
+    flex: 1;
+}
+
+.privacy-mode-selector label strong {
+    display: block;
+    font-size: 1.1em;
+}
+
+.privacy-mode-selector label span {
+    color: #666;
+    font-size: 0.9em;
+}
+
+/* Settings Page Button Styles */
+.settings-page .btn {
+    padding: 15px 30px;
+}
+
+/* Navigation Header */
+.settings-header-wrapper {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 20px;
+}
+
+.settings-navigation {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-start;
+    grid-column: 1;
+}
+
+.settings-navigation .back-button {
+    margin-bottom: 0;
+}
+
+.settings-page h1 {
+    margin: 0;
+    text-align: center;
+    grid-column: 2;
+}
+
+.settings-header-wrapper > *:not(.settings-navigation):not(h1) {
+    grid-column: 3;
+    justify-self: end;
+}
+
+/* Manual Actions Button Group */
+.manual-actions-buttons {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* API Key Form Styling */
+.api-key-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.api-key-form input {
+    width: 100%;
+    max-width: 400px;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 0.9rem;
+}
+
+.api-key-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* Password Change Form Button */
+.password-change-form .btn {
+    padding: 15px 30px;
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 600px) {
+    .settings-header-wrapper {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+    
+    .settings-navigation {
+        grid-column: 1;
+        width: 100%;
+        flex-wrap: wrap;
+    }
+    
+    .settings-navigation .back-button {
+        flex: 1;
+        min-width: calc(50% - 5px);
+        text-align: center;
+        margin-bottom: 0;
+    }
+    
+    .settings-page h1 {
+        grid-column: 1;
+        width: 100%;
+        text-align: center;
+    }
+    
+    /* Manual Actions buttons - full width on mobile */
+    .manual-actions-buttons {
+        flex-direction: column;
+    }
+    
+    .manual-actions-buttons .btn {
+        width: 100%;
+    }
+    
+    /* API Key form - full width inputs and buttons on mobile */
+    .api-key-form input {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    
+    .api-key-buttons {
+        flex-direction: column;
+    }
+    
+    .api-key-buttons .btn {
+        width: 100%;
+    }
+    
+    /* Privacy mode selector - stack labels vertically but keep radio inline on mobile */
+    .privacy-mode-selector label {
+        align-items: flex-start;
+        flex-direction: row;
+    }
+    
+    /* Password change form - full width on mobile */
+    .password-change-form input {
+        width: 100% !important;
+    }
+    
+    /* Password change button - full width on mobile like other buttons */
+    .password-change-form .btn {
+        width: 100%;
+    }
+    
+    /* Agent selector - allow horizontal scroll on mobile */
+    .agent-selector {
+        -webkit-overflow-scrolling: touch;
+    }
+}
+

@@ -9,27 +9,19 @@
     {% if clippy_agent and clippy_agent != 'none' %}
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/build/clippy.css') }}" media="all">
     {% endif %}
-    <style>
-        input[type="text"],
-        textarea {
-            padding: 10px;
-            border-radius: 6px;
-        }
-        
-        .btn {
-            flex: 1;
-            padding: 12px;
-        }
-    </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <a href="{{ base_url }}/" class="back-button">← Back</a>
-            <h1>🏷️ Tag Management</h1>
-            <div style="display: flex; gap: 10px; align-items: center;">
-                <button class="create-btn" onclick="openCreateModal()">+ Create Tag</button>
-                <a href="{{ base_url }}/logout" class="back-button" style="margin: 0;">🚪 Logout</a>
+    <div class="container tags-page">
+        <div class="navigation">
+            <div class="tags-header-wrapper">
+                <div class="tags-navigation">
+                    <a href="{{ base_url }}/" class="back-button">← Back</a>
+                    <a href="{{ base_url }}/logout" class="back-button">🚪 Logout</a>
+                </div>
+                <h1>🏷️ Tag Management</h1>
+                <div class="tags-header">
+                    <button class="create-btn" onclick="openCreateModal()">+ Create Tag</button>
+                </div>
             </div>
         </div>
         
