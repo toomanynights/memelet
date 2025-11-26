@@ -31,3 +31,4 @@ files/_system/thumbnails/*
 .history/
 .vscode/
 .trash/
+.agent/

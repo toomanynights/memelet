@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Settings - Memelet</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/build/clippy.css') }}" media="all">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/build/clippy.css') }}"
+        media="all">
 </head>
+
 <body>
     <div class="container settings-page">
         <div class="settings-header-wrapper">
@@ -17,21 +20,21 @@
             </div>
             <h1>⚙️ Settings</h1>
         </div>
-        
+
         <div class="section">
             <h2>Manual Actions</h2>
-            
+
             <div id="message-container"></div>
-            
+
             <p class="action-description">
                 Trigger manual scans and processing. The automated scan runs every hour.
             </p>
-            
+
             <div class="manual-actions-buttons">
                 <button type="button" class="btn btn-primary" id="scan-btn" onclick="triggerAction('scan')">
                     🔍 Scan & Process New Memes
                 </button>
-                
+
                 <button type="button" class="btn btn-warning" id="retry-btn" onclick="triggerAction('retry_errors')">
                     🔄 Reprocess Errors
                 </button>
@@ -41,7 +44,7 @@
                 </button>
             </div>
         </div>
-        
+
         <div class="section">
             <h2>Latest Scan Activity</h2>
             <p class="action-description">
@@ -49,27 +52,66 @@
             </p>
             <div class="log-container" id="log-content">{{ log_content }}</div>
         </div>
-        
+
         <div class="section">
             <h2>🔑 Replicate API Key</h2>
+            {% if is_managed_instance %}
             <p class="action-description">
-                Configure your Replicate API key for AI-powered meme analysis. Get your key from <a href="https://replicate.com/account/api-tokens" target="_blank" rel="noopener noreferrer">replicate.com/account/api-tokens</a>
+                <strong>✅ Managed by Memelord:</strong> This instance uses Memelord's shared Replicate API. No
+                configuration needed!
+            </p>
+            <div style="margin-top: 15px;">
+                <button type="button" class="btn" id="show-custom-key-btn" onclick="showCustomKeyForm()">
+                    🔑 Use Custom API Key Instead
+                </button>
+            </div>
+            <div id="custom-key-form"
+                style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                <p class="action-description">
+                    Provide your own Replicate API key to use direct billing. Get your key from <a
+                        href="https://replicate.com/account/api-tokens" target="_blank"
+                        rel="noopener noreferrer">replicate.com/account/api-tokens</a>
+                </p>
+                <div class="api-key-form">
+                    <input type="password" id="api-key-input" placeholder="Enter your Replicate API key">
+                    <div class="api-key-buttons">
+                        <button type="button" class="btn btn-primary" onclick="saveApiKey()">💾 Save API Key</button>
+                        <button type="button" class="btn" id="show-hide-btn" onclick="toggleApiKeyVisibility()"
+                            style="display: none;">👁️ Show/Hide</button>
+                        <button type="button" class="btn" onclick="clearApiKey()">🗑️ Clear</button>
+                    </div>
+                </div>
+                <div id="api-key-status" style="margin-top: 10px; font-size: 0.9rem;"></div>
+                <div id="api-key-message" style="margin-top: 10px;"></div>
+                <p style="margin-top: 10px; font-size: 0.85rem; color: #666;">
+                    <strong>Note:</strong> For security, saved API keys are masked and cannot be retrieved. To change
+                    the key, clear the field and enter a new one.
+                </p>
+            </div>
+            {% else %}
+            <p class="action-description">
+                Configure your Replicate API key for AI-powered meme analysis. Get your key from <a
+                    href="https://replicate.com/account/api-tokens" target="_blank"
+                    rel="noopener noreferrer">replicate.com/account/api-tokens</a>
             </p>
             <div class="api-key-form">
                 <input type="password" id="api-key-input" placeholder="Enter your Replicate API key">
                 <div class="api-key-buttons">
                     <button type="button" class="btn btn-primary" onclick="saveApiKey()">💾 Save API Key</button>
-                    <button type="button" class="btn" id="show-hide-btn" onclick="toggleApiKeyVisibility()" style="display: none;">👁️ Show/Hide</button>
+                    <button type="button" class="btn" id="show-hide-btn" onclick="toggleApiKeyVisibility()"
+                        style="display: none;">👁️ Show/Hide</button>
                     <button type="button" class="btn" onclick="clearApiKey()">🗑️ Clear</button>
                 </div>
             </div>
             <div id="api-key-status" style="margin-top: 10px; font-size: 0.9rem;"></div>
             <div id="api-key-message" style="margin-top: 10px;"></div>
             <p style="margin-top: 10px; font-size: 0.85rem; color: #666;">
-                <strong>Note:</strong> For security, saved API keys are masked and cannot be retrieved. To change the key, clear the field and enter a new one.
+                <strong>Note:</strong> For security, saved API keys are masked and cannot be retrieved. To change the
+                key, clear the field and enter a new one.
             </p>
+            {% endif %}
         </div>
-        
+
         <div class="section">
             <h2>🔐 Account Security</h2>
             <p class="action-description">
@@ -77,33 +119,44 @@
             </p>
             <div class="password-change-form">
                 <div style="margin-bottom: 15px;">
-                    <label for="username-display" style="display: block; margin-bottom: 5px; font-weight: 500;">Your Login</label>
-                    <input type="text" id="username-display" value="{{ username }}" readonly style="width: 400px; max-width: 100%; padding: 10px; background: #f7fafc; cursor: not-allowed; color: #4a5568;">
+                    <label for="username-display" style="display: block; margin-bottom: 5px; font-weight: 500;">Your
+                        Login</label>
+                    <input type="text" id="username-display" value="{{ username }}" readonly
+                        style="width: 400px; max-width: 100%; padding: 10px; background: #f7fafc; cursor: not-allowed; color: #4a5568;">
                 </div>
-                <button type="button" class="btn btn-primary" id="show-password-fields-btn" onclick="showPasswordFields()">🔒 Change Password</button>
-                
-                <div id="password-fields" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                <button type="button" class="btn btn-primary" id="show-password-fields-btn"
+                    onclick="showPasswordFields()">🔒 Change Password</button>
+
+                <div id="password-fields"
+                    style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
                     <div style="margin-bottom: 15px;">
-                        <label for="current-password" style="display: block; margin-bottom: 5px; font-weight: 500;">Current Password</label>
-                        <input type="password" id="current-password" placeholder="Enter current password" style="width: 400px; max-width: 100%; padding: 10px;">
+                        <label for="current-password"
+                            style="display: block; margin-bottom: 5px; font-weight: 500;">Current Password</label>
+                        <input type="password" id="current-password" placeholder="Enter current password"
+                            style="width: 400px; max-width: 100%; padding: 10px;">
                     </div>
                     <div style="margin-bottom: 15px;">
-                        <label for="new-password" style="display: block; margin-bottom: 5px; font-weight: 500;">New Password</label>
-                        <input type="password" id="new-password" placeholder="Enter new password (min 4 characters)" style="width: 400px; max-width: 100%; padding: 10px;">
+                        <label for="new-password" style="display: block; margin-bottom: 5px; font-weight: 500;">New
+                            Password</label>
+                        <input type="password" id="new-password" placeholder="Enter new password (min 4 characters)"
+                            style="width: 400px; max-width: 100%; padding: 10px;">
                     </div>
                     <div style="margin-bottom: 15px;">
-                        <label for="confirm-password" style="display: block; margin-bottom: 5px; font-weight: 500;">Confirm New Password</label>
-                        <input type="password" id="confirm-password" placeholder="Confirm new password" style="width: 400px; max-width: 100%; padding: 10px;">
+                        <label for="confirm-password"
+                            style="display: block; margin-bottom: 5px; font-weight: 500;">Confirm New Password</label>
+                        <input type="password" id="confirm-password" placeholder="Confirm new password"
+                            style="width: 400px; max-width: 100%; padding: 10px;">
                     </div>
                     <div style="display: flex; gap: 10px;">
-                        <button type="button" class="btn btn-primary" onclick="submitPasswordChange()">💾 Save New Password</button>
+                        <button type="button" class="btn btn-primary" onclick="submitPasswordChange()">💾 Save New
+                            Password</button>
                         <button type="button" class="btn" onclick="hidePasswordFields()">Cancel</button>
                     </div>
                 </div>
             </div>
             <div id="password-message" style="margin-top: 10px;"></div>
         </div>
-        
+
         <div class="section">
             <h2>🔒 Privacy Mode</h2>
             <p class="action-description">
@@ -121,13 +174,14 @@
                     <input type="radio" name="privacy-mode" value="public">
                     <div>
                         <strong>🌍 Public</strong>
-                        <span>Visitors can view memes and descriptions (read-only). Settings and editing require authentication.</span>
+                        <span>Visitors can view memes and descriptions (read-only). Settings and editing require
+                            authentication.</span>
                     </div>
                 </label>
             </div>
             <div id="privacy-mode-message" style="margin-top: 10px;"></div>
         </div>
-        
+
         <div class="section">
             <h2>Clippy Agent Appearance</h2>
             <p class="action-description">
@@ -139,11 +193,11 @@
             <div id="agent-message" style="margin-top: 15px;"></div>
         </div>
     </div>
-    
+
     <script>
         let isProcessing = false;
         let logCheckInterval;
-        
+
         function triggerAction(action) {
             // Disable buttons
             isProcessing = true;
@@ -151,7 +205,7 @@
             document.getElementById('retry-btn').disabled = true;
             const scanTagsBtn = document.getElementById('scan-tags-btn');
             if (scanTagsBtn) scanTagsBtn.disabled = true;
-            
+
             if (action === 'scan') {
                 document.getElementById('scan-btn').textContent = '⏳ Processing...';
             } else if (action === 'retry_errors') {
@@ -159,10 +213,10 @@
             } else if (action === 'scan_tags_all') {
                 if (scanTagsBtn) scanTagsBtn.textContent = '⏳ Processing...';
             }
-            
+
             // Show message
             showMessage('Starting process... Check the log below for progress.', 'success');
-            
+
             // Trigger action via AJAX
             fetch(`${BASE_URL}/api/trigger-action`, {
                 method: 'POST',
@@ -171,28 +225,28 @@
                 },
                 body: JSON.stringify({ action: action })
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showMessage(data.message, 'success');
-                    // Start checking log for completion
-                    logCheckInterval = setInterval(checkIfProcessingComplete, 2000);
-                } else {
-                    showMessage(data.message, 'error');
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showMessage(data.message, 'success');
+                        // Start checking log for completion
+                        logCheckInterval = setInterval(checkIfProcessingComplete, 2000);
+                    } else {
+                        showMessage(data.message, 'error');
+                        enableButtons();
+                    }
+                })
+                .catch(error => {
+                    showMessage('Error triggering action: ' + error, 'error');
                     enableButtons();
-                }
-            })
-            .catch(error => {
-                showMessage('Error triggering action: ' + error, 'error');
-                enableButtons();
-            });
+                });
         }
-        
+
         function showMessage(text, type) {
             const container = document.getElementById('message-container');
             container.innerHTML = `<div class="message ${type}">${text}</div>`;
         }
-        
+
         function enableButtons() {
             isProcessing = false;
             document.getElementById('scan-btn').disabled = false;
@@ -204,14 +258,14 @@
                 scanTagsBtn.disabled = false;
                 scanTagsBtn.textContent = '🔎 Scan Tags (All Memes)';
             }
-            
+
             if (logCheckInterval) {
                 clearInterval(logCheckInterval);
             }
         }
-        
+
         let lastLogContent = '';
-        
+
         function checkIfProcessingComplete() {
             fetch(`${BASE_URL}/settings`)
                 .then(response => response.text())
@@ -219,22 +273,22 @@
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(html, 'text/html');
                     const newLogContent = doc.getElementById('log-content').textContent;
-                    
+
                     // Check if log content changed and contains completion message
-                    if (newLogContent !== lastLogContent && 
+                    if (newLogContent !== lastLogContent &&
                         newLogContent.includes('completed')) {
                         showMessage('✓ Process completed!', 'success');
                         enableButtons();
                     }
-                    
+
                     lastLogContent = newLogContent;
                     document.getElementById('log-content').textContent = newLogContent;
                 })
                 .catch(error => console.error('Error checking log:', error));
         }
-        
+
         // Auto-refresh log every 5 seconds
-        setInterval(function() {
+        setInterval(function () {
             if (!isProcessing) {
                 fetch(`${BASE_URL}/settings`)
                     .then(response => response.text())
@@ -248,15 +302,15 @@
             }
         }, 5000);
     </script>
-    
+
     <!-- API Key Management Script -->
     <script>
         // Get base URL for API calls (for multi-tenant support)
         const BASE_URL = '{{ base_url }}';
-        
+
         let currentApiKey = '';
         let hasExistingKey = false;
-        
+
         // Load current API key on page load
         function loadApiKey() {
             fetch(`${BASE_URL}/api/settings/replicate-api-key`)
@@ -275,8 +329,12 @@
                             statusEl.style.color = '#2ecc71';
                         } else {
                             hasExistingKey = false;
-                            statusEl.innerHTML = '⚠️ No API key configured';
-                            statusEl.style.color = '#e74c3c';
+                            // Don't show warning if this is a managed instance
+                            // (the custom key form is hidden by default in managed mode)
+                            if (!document.getElementById('custom-key-form') || document.getElementById('custom-key-form').style.display !== 'none') {
+                                statusEl.innerHTML = '⚠️ No API key configured';
+                                statusEl.style.color = '#e74c3c';
+                            }
                             inputEl.disabled = false;
                             inputEl.style.opacity = '1';
                         }
@@ -286,38 +344,38 @@
                     console.error('Error loading API key:', error);
                 });
         }
-        
+
         function clearApiKey() {
             const inputEl = document.getElementById('api-key-input');
             const showHideBtn = document.getElementById('show-hide-btn');
-            
+
             inputEl.value = '';
             inputEl.disabled = false;
             inputEl.style.opacity = '1';
             inputEl.type = 'password';
             inputEl.focus();
-            
+
             // Show the show/hide button when entering a new key
             showHideBtn.style.display = 'inline-block';
-            
+
             const statusEl = document.getElementById('api-key-status');
             if (hasExistingKey) {
                 statusEl.innerHTML = '📝 Ready to enter new API key';
                 statusEl.style.color = '#f39c12';
             }
         }
-        
+
         function saveApiKey() {
             const apiKey = document.getElementById('api-key-input').value.trim();
             const showHideBtn = document.getElementById('show-hide-btn');
-            
+
             if (!apiKey) {
                 const msgEl = document.getElementById('api-key-message');
                 msgEl.innerHTML = '<div class="message error">Please enter an API key</div>';
                 setTimeout(() => msgEl.innerHTML = '', 3000);
                 return;
             }
-            
+
             // Don't save if it's the masked version
             if (apiKey.startsWith('•')) {
                 const msgEl = document.getElementById('api-key-message');
@@ -325,37 +383,37 @@
                 setTimeout(() => msgEl.innerHTML = '', 3000);
                 return;
             }
-            
+
             fetch(`${BASE_URL}/api/settings/replicate-api-key`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ api_key: apiKey })
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const msgEl = document.getElementById('api-key-message');
+                        msgEl.innerHTML = '<div class="message success">API key saved successfully!</div>';
+                        setTimeout(() => msgEl.innerHTML = '', 3000);
+
+                        // Hide show/hide button again
+                        showHideBtn.style.display = 'none';
+
+                        // Reload to show masked version
+                        loadApiKey();
+                    } else {
+                        const msgEl = document.getElementById('api-key-message');
+                        msgEl.innerHTML = '<div class="message error">Error saving API key: ' + (data.error || 'Unknown error') + '</div>';
+                        setTimeout(() => msgEl.innerHTML = '', 5000);
+                    }
+                })
+                .catch(error => {
                     const msgEl = document.getElementById('api-key-message');
-                    msgEl.innerHTML = '<div class="message success">API key saved successfully!</div>';
-                    setTimeout(() => msgEl.innerHTML = '', 3000);
-                    
-                    // Hide show/hide button again
-                    showHideBtn.style.display = 'none';
-                    
-                    // Reload to show masked version
-                    loadApiKey();
-                } else {
-                    const msgEl = document.getElementById('api-key-message');
-                    msgEl.innerHTML = '<div class="message error">Error saving API key: ' + (data.error || 'Unknown error') + '</div>';
+                    msgEl.innerHTML = '<div class="message error">Error saving API key: ' + error + '</div>';
                     setTimeout(() => msgEl.innerHTML = '', 5000);
-                }
-            })
-            .catch(error => {
-                const msgEl = document.getElementById('api-key-message');
-                msgEl.innerHTML = '<div class="message error">Error saving API key: ' + error + '</div>';
-                setTimeout(() => msgEl.innerHTML = '', 5000);
-            });
+                });
         }
-        
+
         function toggleApiKeyVisibility() {
             const input = document.getElementById('api-key-input');
             if (input.type === 'password') {
@@ -364,15 +422,22 @@
                 input.type = 'password';
             }
         }
-        
-        // Show/hide the show/hide button when user types
-        document.addEventListener('DOMContentLoaded', function() {
+
+        function showCustomKeyForm() {
+            document.getElementById('custom-key-form').style.display = 'block';
+            document.getElementById('show-custom-key-btn').style.display = 'none';
+            // Load current key state when form is shown
             loadApiKey();
-            
+        }
+
+        // Show/hide the show/hide button when user types
+        document.addEventListener('DOMContentLoaded', function () {
+            loadApiKey();
+
             const inputEl = document.getElementById('api-key-input');
             const showHideBtn = document.getElementById('show-hide-btn');
-            
-            inputEl.addEventListener('input', function() {
+
+            inputEl.addEventListener('input', function () {
                 // Only show the button if field is not disabled and has content
                 if (!this.disabled && this.value.length > 0) {
                     showHideBtn.style.display = 'inline-block';
@@ -382,16 +447,16 @@
             });
         });
     </script>
-    
+
     <!-- Agent Selector Script -->
     <script>
         let currentAgent = '{{ current_agent }}';
-        
+
         function createAgentPreview(agent, isNone = false) {
             const preview = document.createElement('div');
             preview.className = 'agent-preview';
             preview.dataset.agent = agent ? agent.name : 'none';
-            
+
             if (isNone) {
                 preview.innerHTML = `
                     <div class="agent-preview-none">
@@ -403,21 +468,21 @@
                 // Create image container (80x80px)
                 const container = document.createElement('div');
                 container.className = 'agent-preview-image-container';
-                
+
                 const img = document.createElement('img');
                 img.alt = agent.name;
-                
+
                 // Scale preview image to fit 80px height while maintaining aspect ratio
-                img.onload = function() {
+                img.onload = function () {
                     try {
                         const naturalWidth = img.naturalWidth;
                         const naturalHeight = img.naturalHeight;
-                        
+
                         if (naturalHeight > 0) {
                             // Calculate scale to fit 80px height
                             const scale = 80 / naturalHeight;
                             const scaledWidth = naturalWidth * scale;
-                            
+
                             // Set image size
                             img.style.width = `${scaledWidth}px`;
                             img.style.height = `${80}px`;
@@ -426,8 +491,8 @@
                         console.error('Error scaling preview image:', e);
                     }
                 };
-                
-                img.onerror = function() {
+
+                img.onerror = function () {
                     console.error(`Failed to load preview.png for agent: ${agent.name}`);
                     // Show placeholder or agent name as fallback
                     img.style.display = 'none';
@@ -443,86 +508,140 @@
                     placeholder.textContent = agent.name.substring(0, 4);
                     container.appendChild(placeholder);
                 };
-                
+
                 img.src = `/static/clippy/agents/${agent.name}/preview.png`;
                 container.appendChild(img);
-                
+
                 const name = document.createElement('div');
                 name.className = 'agent-name';
                 name.textContent = agent.name;
-                
+
                 preview.appendChild(container);
                 preview.appendChild(name);
             }
-            
+
             // Mark as selected if it matches current agent
             if ((isNone && currentAgent === 'none') || (!isNone && agent.name === currentAgent)) {
                 preview.classList.add('selected');
             }
-            
+
             preview.addEventListener('click', () => selectAgent(isNone ? 'none' : agent.name));
-            
+
             return preview;
         }
-        
+
         let currentClippyAgent = null;
-        
+
         function selectAgent(agentName) {
             fetch(`${BASE_URL}/api/settings/clippy-agent`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ agent_form: agentName })
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    currentAgent = agentName;
-                    
-                    // Update UI
-                    document.querySelectorAll('.agent-preview').forEach(p => {
-                        p.classList.remove('selected');
-                    });
-                    const selected = document.querySelector(`.agent-preview[data-agent="${agentName}"]`);
-                    if (selected) selected.classList.add('selected');
-                    
-                    // Immediately load the selected agent
-                    if (agentName === 'none') {
-                        // Hide current agent if any
-                        if (currentClippyAgent) {
-                            try {
-                                currentClippyAgent.hide(false, function() {
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        currentAgent = agentName;
+
+                        // Update UI
+                        document.querySelectorAll('.agent-preview').forEach(p => {
+                            p.classList.remove('selected');
+                        });
+                        const selected = document.querySelector(`.agent-preview[data-agent="${agentName}"]`);
+                        if (selected) selected.classList.add('selected');
+
+                        // Immediately load the selected agent
+                        if (agentName === 'none') {
+                            // Hide current agent if any
+                            if (currentClippyAgent) {
+                                try {
+                                    currentClippyAgent.hide(false, function () {
                                         currentClippyAgent._el.remove();
                                         currentClippyAgent._balloon._balloon.remove();
                                         currentClippyAgent = null;
-                                    
-                                });
-                            } catch (e) {
-                                currentClippyAgent = null;
-                            }
-                        }
-                    } else {
-                        // Load new agent
-                        if (typeof clippy !== 'undefined') {
-                            // Hide current agent if any, then load new one
-                            if (currentClippyAgent) {
-                                try {
-                                    var oldAgent = currentClippyAgent;
+
+                                    });
+                                } catch (e) {
                                     currentClippyAgent = null;
-                                    
-                                    // Wait for hide animation to complete before cleaning up
-                                    oldAgent.hide(false, function() {
-                                        // After hide completes, remove old agent's DOM elements
-                                        oldAgent._el.remove();
-                                        oldAgent._balloon._balloon.remove();
-                                        
-                                        // NOW load the new agent
-                                        clippy.load(agentName, function(agent) {
+                                }
+                            }
+                        } else {
+                            // Load new agent
+                            if (typeof clippy !== 'undefined') {
+                                // Hide current agent if any, then load new one
+                                if (currentClippyAgent) {
+                                    try {
+                                        var oldAgent = currentClippyAgent;
+                                        currentClippyAgent = null;
+
+                                        // Wait for hide animation to complete before cleaning up
+                                        oldAgent.hide(false, function () {
+                                            // After hide completes, remove old agent's DOM elements
+                                            oldAgent._el.remove();
+                                            oldAgent._balloon._balloon.remove();
+
+                                            // NOW load the new agent
+                                            clippy.load(agentName, function (agent) {
+                                                currentClippyAgent = agent;
+                                                window.currentClippyAgent = agent;
+                                                if (window.hookClippySpeech) {
+                                                    window.hookClippySpeech(agent);
+                                                }
+
+                                                // Position the agent manually before showing
+                                                var margin = 16;
+                                                var w = $(window).width();
+                                                var h = $(window).height();
+                                                var elW = agent._el.outerWidth() || 124;
+                                                var elH = agent._el.outerHeight() || 93;
+                                                var leftPos = Math.max(margin, w - elW - margin);
+                                                var topPos = Math.max(margin, h - elH - margin);
+                                                agent._el.css({ top: topPos, left: leftPos });
+
+                                                // Use the built-in show() which handles Show animation properly
+                                                agent.show();
+
+                                                // Use setTimeout to ensure DOM has updated before positioning balloon
+                                                setTimeout(function () {
+                                                    // Get transformation phrase for the new agent
+                                                    window.loadClippyPhrases().then(function (phrases) {
+                                                        var agentPhrase = phrases.transformation && phrases.transformation[agentName.toLowerCase()]
+                                                            ? phrases.transformation[agentName.toLowerCase()]
+                                                            : 'Hello!';
+                                                        agent.speak(agentPhrase);
+
+                                                        try {
+                                                            if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
+                                                                agent.play('CheckingSomething', 5000);
+                                                            }
+                                                        } catch (e) { }
+                                                    }).catch(function () {
+                                                        agent.speak('Hello!');
+
+                                                        try {
+                                                            if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
+                                                                agent.play('CheckingSomething', 5000);
+                                                            }
+                                                        } catch (e) { }
+                                                    });
+                                                }, 50);
+                                            });
+                                        });
+                                    } catch (e) {
+                                        // If hide fails, still clean up and load new agent
+                                        if (currentClippyAgent) {
+                                            currentClippyAgent._el.remove();
+                                            currentClippyAgent._balloon._balloon.remove();
+                                            currentClippyAgent = null;
+                                        }
+
+                                        clippy.load(agentName, function (agent) {
                                             currentClippyAgent = agent;
                                             window.currentClippyAgent = agent;
                                             if (window.hookClippySpeech) {
                                                 window.hookClippySpeech(agent);
                                             }
-                                            
+
                                             // Position the agent manually before showing
                                             var margin = 16;
                                             var w = $(window).width();
@@ -532,52 +651,47 @@
                                             var leftPos = Math.max(margin, w - elW - margin);
                                             var topPos = Math.max(margin, h - elH - margin);
                                             agent._el.css({ top: topPos, left: leftPos });
-                                            
+
                                             // Use the built-in show() which handles Show animation properly
                                             agent.show();
-                                            
+
                                             // Use setTimeout to ensure DOM has updated before positioning balloon
-                                            setTimeout(function() {
+                                            setTimeout(function () {
                                                 // Get transformation phrase for the new agent
-                                                window.loadClippyPhrases().then(function(phrases) {
-                                                    var agentPhrase = phrases.transformation && phrases.transformation[agentName.toLowerCase()] 
-                                                        ? phrases.transformation[agentName.toLowerCase()] 
+                                                window.loadClippyPhrases().then(function (phrases) {
+                                                    var agentPhrase = phrases.transformation && phrases.transformation[agentName.toLowerCase()]
+                                                        ? phrases.transformation[agentName.toLowerCase()]
                                                         : 'Hello!';
                                                     agent.speak(agentPhrase);
-                                                    
+
                                                     try {
                                                         if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
                                                             agent.play('CheckingSomething', 5000);
                                                         }
-                                                    } catch (e) {}
-                                                }).catch(function() {
+                                                    } catch (e) { }
+                                                }).catch(function () {
                                                     agent.speak('Hello!');
-                                                    
+
                                                     try {
                                                         if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
                                                             agent.play('CheckingSomething', 5000);
                                                         }
-                                                    } catch (e) {}
+                                                    } catch (e) { }
                                                 });
                                             }, 50);
                                         });
-                                    });
-                                } catch (e) {
-                                    // If hide fails, still clean up and load new agent
-                                    if (currentClippyAgent) {
-                                        currentClippyAgent._el.remove();
-                                        currentClippyAgent._balloon._balloon.remove();
-                                        currentClippyAgent = null;
                                     }
-                                    
-                                    clippy.load(agentName, function(agent) {
+                                } else {
+                                    // No current agent, load immediately
+                                    clippy.load(agentName, function (agent) {
                                         currentClippyAgent = agent;
                                         window.currentClippyAgent = agent;
                                         if (window.hookClippySpeech) {
                                             window.hookClippySpeech(agent);
                                         }
-                                        
-                                        // Position the agent manually before showing
+
+                                        // Position the agent BEFORE showing it
+                                        agent._hidden = false;
                                         var margin = 16;
                                         var w = $(window).width();
                                         var h = $(window).height();
@@ -586,82 +700,33 @@
                                         var leftPos = Math.max(margin, w - elW - margin);
                                         var topPos = Math.max(margin, h - elH - margin);
                                         agent._el.css({ top: topPos, left: leftPos });
-                                        
-                                        // Use the built-in show() which handles Show animation properly
-                                        agent.show();
-                                        
-                                        // Use setTimeout to ensure DOM has updated before positioning balloon
-                                        setTimeout(function() {
-                                            // Get transformation phrase for the new agent
-                                            window.loadClippyPhrases().then(function(phrases) {
-                                                var agentPhrase = phrases.transformation && phrases.transformation[agentName.toLowerCase()] 
-                                                    ? phrases.transformation[agentName.toLowerCase()] 
-                                                    : 'Hello!';
-                                                agent.speak(agentPhrase);
-                                                
-                                                try {
-                                                    if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
-                                                        agent.play('CheckingSomething', 5000);
-                                                    }
-                                                } catch (e) {}
-                                            }).catch(function() {
-                                                agent.speak('Hello!');
-                                                
-                                                try {
-                                                    if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
-                                                        agent.play('CheckingSomething', 5000);
-                                                    }
-                                                } catch (e) {}
-                                            });
-                                        }, 50);
+                                        agent._el.show();
+                                        agent.resume();
+                                        agent._onQueueEmpty();
+
+                                        try {
+                                            if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
+                                                agent.play('CheckingSomething', 5000);
+                                            }
+                                        } catch (e) { }
                                     });
                                 }
-                            } else {
-                                // No current agent, load immediately
-                                clippy.load(agentName, function(agent) {
-                                    currentClippyAgent = agent;
-                                    window.currentClippyAgent = agent;
-                                    if (window.hookClippySpeech) {
-                                        window.hookClippySpeech(agent);
-                                    }
-                                    
-                                    // Position the agent BEFORE showing it
-                                    agent._hidden = false;
-                                    var margin = 16;
-                                    var w = $(window).width();
-                                    var h = $(window).height();
-                                    var elW = agent._el.outerWidth() || 124;
-                                    var elH = agent._el.outerHeight() || 93;
-                                    var leftPos = Math.max(margin, w - elW - margin);
-                                    var topPos = Math.max(margin, h - elH - margin);
-                                    agent._el.css({ top: topPos, left: leftPos });
-                                    agent._el.show();
-                                    agent.resume();
-                                    agent._onQueueEmpty();
-                                    
-                                    try {
-                                        if (agent.hasAnimation && agent.hasAnimation('CheckingSomething')) {
-                                            agent.play('CheckingSomething', 5000);
-                                        }
-                                    } catch (e) {}
-                                });
                             }
                         }
+
+                        // Show feedback
+                        const msgEl = document.getElementById('agent-message');
+                        msgEl.innerHTML = `<div class="message success">Agent selection saved${agentName === 'none' ? ' (Clippy disabled)' : ''}!</div>`;
+                        setTimeout(() => msgEl.innerHTML = '', 3000);
+                    } else {
+                        alert('Error saving selection: ' + (data.error || 'Unknown error'));
                     }
-                    
-                    // Show feedback
-                    const msgEl = document.getElementById('agent-message');
-                    msgEl.innerHTML = `<div class="message success">Agent selection saved${agentName === 'none' ? ' (Clippy disabled)' : ''}!</div>`;
-                    setTimeout(() => msgEl.innerHTML = '', 3000);
-                } else {
-                    alert('Error saving selection: ' + (data.error || 'Unknown error'));
-                }
-            })
-            .catch(error => {
-                alert('Error saving selection: ' + error);
-            });
+                })
+                .catch(error => {
+                    alert('Error saving selection: ' + error);
+                });
         }
-        
+
         // Load agents and render selector
         fetch(`${BASE_URL}/api/clippy-agents`)
             .then(response => {
@@ -678,10 +743,10 @@
                         console.error('Agent selector container not found!');
                         return;
                     }
-                    
+
                     // Add "None" option first
                     container.appendChild(createAgentPreview(null, true));
-                    
+
                     // Add all agents
                     if (data.agents && Array.isArray(data.agents)) {
                         console.log(`Loading ${data.agents.length} agents`);
@@ -706,14 +771,14 @@
                     container.innerHTML = '<div style="color: red; padding: 10px;">Error loading agents. Please refresh the page.</div>';
                 }
             });
-        
+
         // Show password change fields
         function showPasswordFields() {
             document.getElementById('password-fields').style.display = 'block';
             document.getElementById('show-password-fields-btn').style.display = 'none';
             document.getElementById('current-password').focus();
         }
-        
+
         // Hide password change fields
         function hidePasswordFields() {
             document.getElementById('password-fields').style.display = 'none';
@@ -725,37 +790,37 @@
             // Clear message
             document.getElementById('password-message').innerHTML = '';
         }
-        
+
         // Password change function
         function submitPasswordChange() {
             const currentPassword = document.getElementById('current-password').value;
             const newPassword = document.getElementById('new-password').value;
             const confirmPassword = document.getElementById('confirm-password').value;
             const messageDiv = document.getElementById('password-message');
-            
+
             // Clear previous messages
             messageDiv.innerHTML = '';
             messageDiv.style.display = 'none';
-            
+
             // Validation
             if (!currentPassword || !newPassword || !confirmPassword) {
                 messageDiv.innerHTML = '<div class="message error">All fields are required</div>';
                 messageDiv.style.display = 'block';
                 return;
             }
-            
+
             if (newPassword !== confirmPassword) {
                 messageDiv.innerHTML = '<div class="message error">New passwords do not match</div>';
                 messageDiv.style.display = 'block';
                 return;
             }
-            
+
             if (newPassword.length < 4) {
                 messageDiv.innerHTML = '<div class="message error">Password must be at least 4 characters</div>';
                 messageDiv.style.display = 'block';
                 return;
             }
-            
+
             // Send request
             fetch(`${BASE_URL}/api/settings/change-password`, {
                 method: 'POST',
@@ -768,46 +833,46 @@
                     confirm_password: confirmPassword
                 })
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Show success message
-                    messageDiv.innerHTML = '<div class="message success" style="transition: opacity 0.5s;">' + data.message + '</div>';
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Show success message
+                        messageDiv.innerHTML = '<div class="message success" style="transition: opacity 0.5s;">' + data.message + '</div>';
+                        messageDiv.style.display = 'block';
+
+                        // Wait 2 seconds, then fade out and hide fields
+                        setTimeout(() => {
+                            const successMsg = messageDiv.querySelector('.message.success');
+                            if (successMsg) {
+                                successMsg.style.opacity = '0';
+                                // After fade completes, hide everything
+                                setTimeout(() => {
+                                    hidePasswordFields();
+                                    messageDiv.style.display = 'none';
+                                }, 500);
+                            }
+                        }, 2000);
+                    } else {
+                        messageDiv.innerHTML = '<div class="message error">' + data.error + '</div>';
+                        messageDiv.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    messageDiv.innerHTML = '<div class="message error">An error occurred. Please try again.</div>';
                     messageDiv.style.display = 'block';
-                    
-                    // Wait 2 seconds, then fade out and hide fields
-                    setTimeout(() => {
-                        const successMsg = messageDiv.querySelector('.message.success');
-                        if (successMsg) {
-                            successMsg.style.opacity = '0';
-                            // After fade completes, hide everything
-                            setTimeout(() => {
-                                hidePasswordFields();
-                                messageDiv.style.display = 'none';
-                            }, 500);
-                        }
-                    }, 2000);
-                } else {
-                    messageDiv.innerHTML = '<div class="message error">' + data.error + '</div>';
-                    messageDiv.style.display = 'block';
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                messageDiv.innerHTML = '<div class="message error">An error occurred. Please try again.</div>';
-                messageDiv.style.display = 'block';
-            });
+                });
         }
-        
+
         // Allow Enter key to submit password change
         ['current-password', 'new-password', 'confirm-password'].forEach(id => {
-            document.getElementById(id).addEventListener('keypress', function(e) {
+            document.getElementById(id).addEventListener('keypress', function (e) {
                 if (e.key === 'Enter') {
                     submitPasswordChange();
                 }
             });
         });
-        
+
         // Load and set privacy mode
         fetch(`${BASE_URL}/api/settings/privacy-mode`)
             .then(response => response.json())
@@ -821,13 +886,13 @@
                 }
             })
             .catch(error => console.error('Error loading privacy mode:', error));
-        
+
         // Handle privacy mode change
         document.querySelectorAll('input[name="privacy-mode"]').forEach(radio => {
-            radio.addEventListener('change', function() {
+            radio.addEventListener('change', function () {
                 const messageDiv = document.getElementById('privacy-mode-message');
                 messageDiv.innerHTML = '';
-                
+
                 fetch(`${BASE_URL}/api/settings/privacy-mode`, {
                     method: 'POST',
                     headers: {
@@ -837,23 +902,23 @@
                         privacy_mode: this.value
                     })
                 })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        const modeName = this.value === 'private' ? 'Private' : 'Public';
-                        messageDiv.innerHTML = `<div class="message success">Privacy mode set to ${modeName}</div>`;
-                        updatePrivacyModeStyles();
-                    } else {
-                        messageDiv.innerHTML = '<div class="message error">' + data.error + '</div>';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    messageDiv.innerHTML = '<div class="message error">An error occurred. Please try again.</div>';
-                });
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            const modeName = this.value === 'private' ? 'Private' : 'Public';
+                            messageDiv.innerHTML = `<div class="message success">Privacy mode set to ${modeName}</div>`;
+                            updatePrivacyModeStyles();
+                        } else {
+                            messageDiv.innerHTML = '<div class="message error">' + data.error + '</div>';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        messageDiv.innerHTML = '<div class="message error">An error occurred. Please try again.</div>';
+                    });
             });
         });
-        
+
         function updatePrivacyModeStyles() {
             document.querySelectorAll('input[name="privacy-mode"]').forEach(radio => {
                 const label = radio.closest('label');
@@ -878,7 +943,7 @@
         try {
             initClippyWithSession('{{ current_agent }}', {
                 useAnimations: false, // Use instant show during active session
-                onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState, willSpeakQuip) {
+                onLoad: function (agent, sessionState, willRestoreAnimation, clearSavedState, willSpeakQuip) {
                     try {
                         currentClippyAgent = agent;
                         try {
@@ -887,10 +952,10 @@
                                 if (willRestoreAnimation && clearSavedState) {
                                     clearSavedState();
                                 }
-                                
+
                                 // If a quip will be spoken, load and speak it first, then play animation
                                 if (willSpeakQuip) {
-                                    window.loadClippyPhrases().then(function() {
+                                    window.loadClippyPhrases().then(function () {
                                         var categories = window.getQuipCategoriesForPage();
                                         var quip = window.getRandomClippyPhrase(categories);
                                         agent.speak(quip);
@@ -927,4 +992,5 @@
         {% endif %}
     </script>
 </body>
+
 </html>

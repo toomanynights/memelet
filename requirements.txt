@@ -13,3 +13,6 @@ Pillow>=10.0.0
 
 # Video processing
 opencv-python>=4.8.0
+
+# HTTP requests (for Memelord proxy)
+requests>=2.31.0

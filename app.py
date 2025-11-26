@@ -47,6 +47,14 @@ def load_user(user_id):
 # Configuration - reads from app.config (multi-tenant) or env vars (standalone)
 # Note: Don't cache paths at import time - they need to be dynamic for multi-tenant
 
+# Default config
+app.config.setdefault('IS_MANAGED_INSTANCE', False)
+
+@app.context_processor
+def inject_managed_status():
+    return dict(is_managed_instance=app.config.get('IS_MANAGED_INSTANCE', False))
+
+
 def get_memes_url_base_dynamic():
     """Get memes URL base dynamically for multi-tenant support"""
     return get_memes_url_base()
@@ -1053,8 +1061,10 @@ def trigger_action():
         api_key_row = cursor.fetchone()
         conn.close()
         
-        if not api_key_row or not api_key_row[0].strip():
-            return {'success': False, 'message': 'Replicate API key not configured. Please set it in Settings first.'}
+        if not (api_key_row and api_key_row[0].strip()) and not app.config.get('IS_MANAGED_INSTANCE', False):
+            # Check if we have it in env (e.g. from sitecustomize)
+            if not os.environ.get('REPLICATE_API_TOKEN'):
+                return {'success': False, 'message': 'Replicate API key not configured. Please set it in Settings first.'}
         
         try:
             # Set up environment variables for the shell script

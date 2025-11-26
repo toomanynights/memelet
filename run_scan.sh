@@ -6,6 +6,14 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 # Get script directory (works regardless of where it's installed)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Ensure instance directory (passed from app.py as INSTANCE_DIR) and current directory are in PYTHONPATH
+# INSTANCE_DIR is required for sitecustomize.py to load in multi-tenant mode
+if [ -n "$INSTANCE_DIR" ]; then
+    export PYTHONPATH="$INSTANCE_DIR:$SCRIPT_DIR:$PYTHONPATH"
+else
+    export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"
+fi
+
 # Load environment variables from .env
 if [ -f "$SCRIPT_DIR/.env" ]; then
     export $(cat "$SCRIPT_DIR/.env" | grep -v '^#' | xargs)

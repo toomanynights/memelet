@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,10 +13,12 @@
         }
     </style>
     {% if clippy_agent and clippy_agent != 'none' %}
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/build/clippy.css') }}" media="all">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/build/clippy.css') }}"
+        media="all">
     {% endif %}
-    
+
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -30,26 +33,22 @@
                     {% if current_user.is_authenticated %}
                     <a href="{{ base_url }}/settings"><span class="dropdown-icon">⚙️</span> Settings</a>
                     <a href="{{ base_url }}/tags"><span class="dropdown-icon">🏷️</span> Tags</a>
-                    <a href="#" onclick="event.preventDefault(); openUploadModal();"><span class="dropdown-icon">📤</span> Upload</a>
+                    <a href="#" onclick="event.preventDefault(); openUploadModal();"><span
+                            class="dropdown-icon">📤</span> Upload</a>
                     <a href="{{ base_url }}/logout"><span class="dropdown-icon">🚪</span> Logout</a>
                     {% else %}
                     <a href="{{ base_url }}/login"><span class="dropdown-icon">🔑</span> Sign In</a>
                     {% endif %}
                 </div>
             </div>
-            <h1><img src="{{ url_for('static', filename='logo.png') }}" alt="Memelet" style="height: 1.2em; vertical-align: -0.2em;"> Memelet</h1>
+            <h1><img src="{{ url_for('static', filename='logo.png') }}" alt="Memelet"
+                    style="height: 1.2em; vertical-align: -0.2em;"> Memelet</h1>
             <p>Because memes are happiness</p>
-            
+
             <div class="search-bar">
                 <form class="search-form" method="GET" action="/">
-                    <input 
-                        type="text" 
-                        name="search" 
-                        class="search-input" 
-                        placeholder="Search memes..." 
-                        value="{{ search_query }}"
-                        autofocus
-                    >
+                    <input type="text" name="search" class="search-input" placeholder="Search memes..."
+                        value="{{ search_query }}" autofocus>
                     {% if search_query %}
                     <input type="hidden" name="search" value="{{ search_query }}">
                     {% endif %}
@@ -67,89 +66,89 @@
                     {% endif %}
                 </form>
             </div>
-            
+
             <div class="stats">
                 <a href="/" class="stat-badge total {% if not status_filter %}active{% endif %}">
                     Total: {{ total }}
                 </a>
                 {% if stats.get('done') %}
-                <a href="?status=done{% if search_query %}&search={{ search_query }}{% endif %}" 
-                   class="stat-badge done {% if status_filter == 'done' %}active{% endif %}">
+                <a href="?status=done{% if search_query %}&search={{ search_query }}{% endif %}"
+                    class="stat-badge done {% if status_filter == 'done' %}active{% endif %}">
                     Done: {{ stats.get('done') }}
                 </a>
                 {% endif %}
                 {% if stats.get('new') %}
-                <a href="?status=new{% if search_query %}&search={{ search_query }}{% endif %}" 
-                   class="stat-badge new {% if status_filter == 'new' %}active{% endif %}">
+                <a href="?status=new{% if search_query %}&search={{ search_query }}{% endif %}"
+                    class="stat-badge new {% if status_filter == 'new' %}active{% endif %}">
                     New: {{ stats.get('new') }}
                 </a>
                 {% endif %}
                 {% if stats.get('error') %}
-                <a href="?status=error{% if search_query %}&search={{ search_query }}{% endif %}" 
-                   class="stat-badge error {% if status_filter == 'error' %}active{% endif %}">
+                <a href="?status=error{% if search_query %}&search={{ search_query }}{% endif %}"
+                    class="stat-badge error {% if status_filter == 'error' %}active{% endif %}">
                     Errors: {{ stats.get('error') }}
                 </a>
                 {% endif %}
                 {% if stats.get('reviewed') %}
-                <a href="?status=reviewed{% if search_query %}&search={{ search_query }}{% endif %}" 
-                   class="stat-badge reviewed {% if status_filter == 'reviewed' %}active{% endif %}">
+                <a href="?status=reviewed{% if search_query %}&search={{ search_query }}{% endif %}"
+                    class="stat-badge reviewed {% if status_filter == 'reviewed' %}active{% endif %}">
                     Reviewed: {{ stats.get('reviewed') }}
                 </a>
                 {% endif %}
-                
+
                 {% if media_stats.get('image') %}
-                <a href="?media=image{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}" 
-                   class="stat-badge media-image {% if media_filter == 'image' %}active{% endif %}">
+                <a href="?media=image{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}"
+                    class="stat-badge media-image {% if media_filter == 'image' %}active{% endif %}">
                     📷 Images: {{ media_stats.get('image') }}
                 </a>
                 {% endif %}
                 {% if media_stats.get('gif') %}
-                <a href="?media=gif{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}" 
-                   class="stat-badge media-gif {% if media_filter == 'gif' %}active{% endif %}">
+                <a href="?media=gif{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}"
+                    class="stat-badge media-gif {% if media_filter == 'gif' %}active{% endif %}">
                     🎬 GIFs: {{ media_stats.get('gif') }}
                 </a>
                 {% endif %}
                 {% if media_stats.get('video') %}
-                <a href="?media=video{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}" 
-                   class="stat-badge media-video {% if media_filter == 'video' %}active{% endif %}">
+                <a href="?media=video{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}"
+                    class="stat-badge media-video {% if media_filter == 'video' %}active{% endif %}">
                     🎥 Videos: {{ media_stats.get('video') }}
                 </a>
                 {% endif %}
                 {% if media_stats.get('album') %}
                 <a href="?media=album{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}"
-                   class="stat-badge media-album {% if media_filter == 'album' %}active{% endif %}">
+                    class="stat-badge media-album {% if media_filter == 'album' %}active{% endif %}">
                     📚 Albums: {{ media_stats.get('album') }}
                 </a>
                 {% endif %}
             </div>
-            
+
             {% if all_tags %}
             <div class="tags-filter">
                 {% for tag in all_tags %}
-                <a href="{% if tag_filter == tag.id|string %}/?{% if search_query %}search={{ search_query }}{% endif %}{% if status_filter %}{% if search_query %}&{% endif %}status={{ status_filter }}{% endif %}{% else %}?tag={{ tag.id }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% endif %}" 
-                   class="tag-filter-badge {% if tag_filter == tag.id|string %}active{% endif %}"
-                   style="background-color: {{ tag.color }}">
+                <a href="{% if tag_filter == tag.id|string %}/?{% if search_query %}search={{ search_query }}{% endif %}{% if status_filter %}{% if search_query %}&{% endif %}status={{ status_filter }}{% endif %}{% else %}?tag={{ tag.id }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% endif %}"
+                    class="tag-filter-badge {% if tag_filter == tag.id|string %}active{% endif %}"
+                    style="background-color: {{ tag.color }}">
                     {{ tag.name }} ({{ tag.count }})
                 </a>
                 {% endfor %}
             </div>
             {% endif %}
-            
+
             {% if search_query or status_filter or tag_filter or media_filter %}
             <div class="results-info">
                 Showing {{ memes|length }} result(s)
                 {% if search_query %}for "{{ search_query }}"{% endif %}
                 {% if status_filter %}with status "{{ status_filter }}"{% endif %}
                 {% if tag_filter %}
-                    {% for tag in all_tags %}
-                        {% if tag.id == tag_filter|int %}with tag "{{ tag.name }}"{% endif %}
-                    {% endfor %}
+                {% for tag in all_tags %}
+                {% if tag.id == tag_filter|int %}with tag "{{ tag.name }}"{% endif %}
+                {% endfor %}
                 {% endif %}
                 {% if media_filter %}of type "{{ media_filter }}"{% endif %}
             </div>
             {% endif %}
         </header>
-        
+
         {% if memes %}
         {% if current_user.is_authenticated %}
         <div class="bulk-actions" id="bulkActions">
@@ -163,14 +162,15 @@
             <button class="bulk-btn bulk-btn-cancel" onclick="cancelBulkSelect()">Cancel</button>
         </div>
         {% endif %}
-        
+
         <div class="memes-grid">
             {% for meme in memes %}
             <div class="meme-card-wrapper">
                 {% if current_user.is_authenticated %}
                 <input type="checkbox" class="meme-checkbox" data-id="{{ meme.id }}" onclick="toggleBulkActions(event)">
                 {% endif %}
-                <a href="{{ base_url }}/meme/{{ meme.id }}?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if tag_filter %}tag={{ tag_filter }}&{% endif %}{% if media_filter %}media={{ media_filter }}{% endif %}" class="meme-card">
+                <a href="{{ base_url }}/meme/{{ meme.id }}?{% if search_query %}search={{ search_query }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}{% if tag_filter %}tag={{ tag_filter }}&{% endif %}{% if media_filter %}media={{ media_filter }}{% endif %}"
+                    class="meme-card">
                     <div style="position: relative;">
                         {% if meme.media_type == 'album' %}
                         <div class="album-collage">
@@ -194,11 +194,11 @@
                         {% if meme.media_type == 'album' and meme.title %}
                         <p class="meme-description" style="font-weight: 700;">{{ meme.title }}</p>
                         {% endif %}
-                        
+
                         {% if meme.description %}
                         <p class="meme-description">{{ meme.description }}</p>
                         {% endif %}
-                        
+
                         {% if meme.tags %}
                         <div class="meme-tags">
                             {% for tag in meme.tags[:3] %}
@@ -216,25 +216,27 @@
             </div>
             {% endfor %}
         </div>
-        
+
         {% if show_pagination %}
         <div class="pagination" id="pagination">
             {% if page > 1 %}
-            <a href="?page={{ page - 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if tag_filter %}&tag={{ tag_filter }}{% endif %}{% if media_filter %}&media={{ media_filter }}{% endif %}" onclick="scrollToTop()">← Previous</a>
+            <a href="?page={{ page - 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if tag_filter %}&tag={{ tag_filter }}{% endif %}{% if media_filter %}&media={{ media_filter }}{% endif %}"
+                onclick="scrollToTop()">← Previous</a>
             {% else %}
             <span class="disabled">← Previous</span>
             {% endif %}
-            
+
             <span class="current">Page {{ page }} of {{ total_pages }}</span>
-            
-            {% if page < total_pages %}
-            <a href="?page={{ page + 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if tag_filter %}&tag={{ tag_filter }}{% endif %}{% if media_filter %}&media={{ media_filter }}{% endif %}" onclick="scrollToTop()">Next →</a>
-            {% else %}
-            <span class="disabled">Next →</span>
-            {% endif %}
+
+            {% if page < total_pages %} <a
+                href="?page={{ page + 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if tag_filter %}&tag={{ tag_filter }}{% endif %}{% if media_filter %}&media={{ media_filter }}{% endif %}"
+                onclick="scrollToTop()">Next →</a>
+                {% else %}
+                <span class="disabled">Next →</span>
+                {% endif %}
         </div>
         {% endif %}
-        
+
         {% else %}
         <div class="empty-state">
             {% if search_query or status_filter or tag_filter or media_filter %}
@@ -244,12 +246,12 @@
             <a href="/" class="clear-btn" style="display: inline-block;">Clear filters</a>
             {% else %}
             <h2>No memes yet!</h2>
-            <p>Add some memes to /home/basil/memes/files and they'll appear here</p>
+            <p>Upload some memes (top left button) and they'll appear here</p>
             {% endif %}
         </div>
         {% endif %}
     </div>
-    
+
     <!-- Tag Management Modal -->
     <div id="tagModal" class="modal">
         <div class="modal-content">
@@ -260,7 +262,8 @@
             <div class="tag-selector-modal" id="tagSelector">
                 {% for tag in all_tags %}
                 <div class="tag-option" onclick="toggleTag(this)">
-                    <input type="checkbox" name="tags" value="{{ tag.id }}" onclick="event.stopPropagation()" onchange="handleTagChange(this)">
+                    <input type="checkbox" name="tags" value="{{ tag.id }}" onclick="event.stopPropagation()"
+                        onchange="handleTagChange(this)">
                     <div class="tag-color-box" style="background-color: {{ tag.color }}"></div>
                     <div class="tag-option-info">
                         <div class="tag-option-name">{{ tag.name }}</div>
@@ -274,12 +277,12 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Upload Modal -->
     <div id="uploadModal" class="modal upload-modal">
         <div class="modal-content">
             <div class="modal-header">Upload Memes</div>
-            
+
             <!-- Mode Selector -->
             <div class="mode-selector">
                 <div class="mode-option selected" onclick="selectUploadMode('single')" id="modeSingle">
@@ -293,24 +296,25 @@
                     <div class="mode-option-desc">Upload multiple images as an album</div>
                 </div>
             </div>
-            
+
             <!-- File Upload Area -->
             <div class="file-upload-area" id="fileUploadArea">
                 <div class="file-upload-icon">📁</div>
                 <label for="fileInput" class="file-upload-label">Choose Files</label>
-                <input type="file" id="fileInput" class="file-upload-input" multiple accept=".jpg,.jpeg,.png,.webp,.bmp,.gif,.mp4,.webm,.mov,.avi" onchange="handleFileSelect(event)">
+                <input type="file" id="fileInput" class="file-upload-input" multiple
+                    accept=".jpg,.jpeg,.png,.webp,.bmp,.gif,.mp4,.webm,.mov,.avi" onchange="handleFileSelect(event)">
                 <div class="file-upload-hint" id="fileUploadHint">
                     Drag and drop files here or click to browse<br>
                     <small id="fileTypeHint">Accepted: Images, GIFs, Videos</small>
                 </div>
             </div>
-            
+
             <!-- Selected Files List -->
             <div class="selected-files" id="selectedFilesContainer" style="display: none;">
                 <div class="selected-files-title">Selected Files (<span id="fileCount">0</span>)</div>
                 <div class="file-list" id="fileList"></div>
             </div>
-            
+
             <!-- Upload Progress -->
             <div class="upload-progress" id="uploadProgress">
                 <div class="progress-bar-container">
@@ -318,34 +322,36 @@
                 </div>
                 <div class="upload-status" id="uploadStatus">Uploading...</div>
             </div>
-            
+
             <!-- Action Buttons -->
             <div style="display: flex; gap: 10px; margin-top: 20px;">
-                <button class="btn btn-secondary" onclick="closeUploadModal()" id="uploadCancelBtn" style="flex: 1;">Cancel</button>
-                <button class="btn btn-primary" onclick="startUpload()" id="uploadBtn" style="flex: 1;" disabled>Upload</button>
+                <button class="btn btn-secondary" onclick="closeUploadModal()" id="uploadCancelBtn"
+                    style="flex: 1;">Cancel</button>
+                <button class="btn btn-primary" onclick="startUpload()" id="uploadBtn" style="flex: 1;"
+                    disabled>Upload</button>
             </div>
         </div>
     </div>
-    
+
     <script>
         // Dropdown menu functionality
         function toggleDropdownMenu() {
             const menu = document.getElementById('dropdownMenu');
             menu.classList.toggle('active');
         }
-        
+
         // Close dropdown when clicking outside
-        document.addEventListener('click', function(event) {
+        document.addEventListener('click', function (event) {
             const menu = document.getElementById('dropdownMenu');
             const menuButton = document.querySelector('.header-button.menu');
-            
+
             if (menu && !menu.contains(event.target) && event.target !== menuButton) {
                 menu.classList.remove('active');
             }
         });
-        
+
         // Close modals on Escape key
-        document.addEventListener('keydown', function(event) {
+        document.addEventListener('keydown', function (event) {
             if (event.key === 'Escape' || event.keyCode === 27) {
                 // Close upload modal if open
                 const uploadModal = document.getElementById('uploadModal');
@@ -354,7 +360,7 @@
                     event.preventDefault();
                     return;
                 }
-                
+
                 // Close tag modal if open
                 const tagModal = document.getElementById('tagModal');
                 if (tagModal && tagModal.classList.contains('active')) {
@@ -362,7 +368,7 @@
                     event.preventDefault();
                     return;
                 }
-                
+
                 // Close dropdown menu if open
                 const menu = document.getElementById('dropdownMenu');
                 if (menu && menu.classList.contains('active')) {
@@ -371,11 +377,11 @@
                 }
             }
         });
-        
+
         // Upload Modal State
         let uploadMode = 'single';
         let selectedFiles = [];
-        
+
         function openUploadModal() {
             document.getElementById('uploadModal').classList.add('active');
             // Close dropdown if open
@@ -386,25 +392,25 @@
             document.getElementById('uploadProgress').classList.remove('active');
             document.getElementById('uploadBtn').disabled = true;
         }
-        
+
         function closeUploadModal() {
             document.getElementById('uploadModal').classList.remove('active');
             selectedFiles = [];
             document.getElementById('fileInput').value = '';
             updateFileList();
         }
-        
+
         function selectUploadMode(mode) {
             uploadMode = mode;
-            
+
             // Update UI
             document.getElementById('modeSingle').classList.toggle('selected', mode === 'single');
             document.getElementById('modeAlbum').classList.toggle('selected', mode === 'album');
-            
+
             // Update file input accept attribute
             const fileInput = document.getElementById('fileInput');
             const fileTypeHint = document.getElementById('fileTypeHint');
-            
+
             if (mode === 'album') {
                 fileInput.accept = '.jpg,.jpeg,.png,.webp,.bmp';
                 fileTypeHint.textContent = 'Accepted: Images only (JPG, PNG, WEBP, BMP)';
@@ -412,16 +418,16 @@
                 fileInput.accept = '.jpg,.jpeg,.png,.webp,.bmp,.gif,.mp4,.webm,.mov,.avi';
                 fileTypeHint.textContent = 'Accepted: Images, GIFs, Videos';
             }
-            
+
             // Clear selected files when switching modes
             selectedFiles = [];
             document.getElementById('fileInput').value = '';
             updateFileList();
         }
-        
+
         function handleFileSelect(event) {
             const files = Array.from(event.target.files);
-            
+
             // Validate file types based on mode
             const validFiles = files.filter(file => {
                 if (uploadMode === 'album') {
@@ -432,56 +438,56 @@
                     return file.type.match(/^image\//) || file.type.match(/^video\//);
                 }
             });
-            
+
             if (validFiles.length !== files.length) {
                 alert(`${files.length - validFiles.length} file(s) were rejected due to invalid file type for selected mode.`);
             }
-            
+
             selectedFiles = validFiles;
             updateFileList();
         }
-        
+
         function updateFileList() {
             const container = document.getElementById('selectedFilesContainer');
             const fileList = document.getElementById('fileList');
             const fileCount = document.getElementById('fileCount');
             const uploadBtn = document.getElementById('uploadBtn');
-            
+
             if (selectedFiles.length === 0) {
                 container.style.display = 'none';
                 uploadBtn.disabled = true;
                 return;
             }
-            
+
             container.style.display = 'block';
             fileCount.textContent = selectedFiles.length;
-            
+
             fileList.innerHTML = '';
             selectedFiles.forEach((file, index) => {
                 const fileItem = document.createElement('div');
                 fileItem.className = 'file-item';
-                
+
                 const icon = getFileIcon(file.type);
                 const size = formatFileSize(file.size);
-                
+
                 fileItem.innerHTML = `
                     <span class="file-item-icon">${icon}</span>
                     <span class="file-item-name" title="${file.name}">${file.name}</span>
                     <span class="file-item-size">${size}</span>
                     <button class="file-item-remove" onclick="removeFile(${index})" title="Remove">×</button>
                 `;
-                
+
                 fileList.appendChild(fileItem);
             });
-            
+
             uploadBtn.disabled = false;
         }
-        
+
         function removeFile(index) {
             selectedFiles.splice(index, 1);
             updateFileList();
         }
-        
+
         function getFileIcon(mimeType) {
             if (mimeType.startsWith('image/')) {
                 if (mimeType === 'image/gif') return '🎬';
@@ -491,31 +497,31 @@
             }
             return '📄';
         }
-        
+
         function formatFileSize(bytes) {
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         }
-        
+
         // Drag and drop support
         const fileUploadArea = document.getElementById('fileUploadArea');
-        
+
         fileUploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
             fileUploadArea.classList.add('dragover');
         });
-        
+
         fileUploadArea.addEventListener('dragleave', () => {
             fileUploadArea.classList.remove('dragover');
         });
-        
+
         fileUploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
             fileUploadArea.classList.remove('dragover');
-            
+
             const files = Array.from(e.dataTransfer.files);
-            
+
             // Validate file types based on mode
             const validFiles = files.filter(file => {
                 if (uploadMode === 'album') {
@@ -524,37 +530,37 @@
                     return file.type.match(/^image\//) || file.type.match(/^video\//);
                 }
             });
-            
+
             if (validFiles.length !== files.length) {
                 alert(`${files.length - validFiles.length} file(s) were rejected due to invalid file type for selected mode.`);
             }
-            
+
             selectedFiles = validFiles;
             updateFileList();
         });
-        
+
         function startUpload() {
             if (selectedFiles.length === 0) {
                 alert('Please select at least one file');
                 return;
             }
-            
+
             // Show progress
             document.getElementById('uploadProgress').classList.add('active');
             document.getElementById('uploadBtn').disabled = true;
             document.getElementById('uploadCancelBtn').disabled = true;
-            
+
             // Create FormData
             const formData = new FormData();
             formData.append('mode', uploadMode);
-            
+
             selectedFiles.forEach((file, index) => {
                 formData.append('files', file);
             });
-            
+
             // Upload with progress tracking
             const xhr = new XMLHttpRequest();
-            
+
             xhr.upload.addEventListener('progress', (e) => {
                 if (e.lengthComputable) {
                     const percentComplete = Math.round((e.loaded / e.total) * 100);
@@ -562,7 +568,7 @@
                     document.getElementById('progressBar').textContent = percentComplete + '%';
                 }
             });
-            
+
             xhr.addEventListener('load', () => {
                 if (xhr.status === 200) {
                     const response = JSON.parse(xhr.responseText);
@@ -575,52 +581,52 @@
                     handleUploadError('Upload failed with status ' + xhr.status);
                 }
             });
-            
+
             xhr.addEventListener('error', () => {
                 handleUploadError('Network error during upload');
             });
-            
+
             xhr.open('POST', `${BASE_URL}/api/upload`, true);
             xhr.send(formData);
-            
+
             document.getElementById('uploadStatus').textContent = 'Uploading files...';
             document.getElementById('uploadStatus').className = 'upload-status';
         }
-        
+
         function handleUploadSuccess(response) {
             document.getElementById('progressBar').style.width = '100%';
             document.getElementById('progressBar').textContent = '100%';
             document.getElementById('uploadStatus').textContent = 'Processing memes...';
             document.getElementById('uploadStatus').className = 'upload-status processing';
-            
+
             // Start polling for processing status
             pollProcessingStatus(response.meme_ids);
         }
-        
+
         function pollProcessingStatus(memeIds) {
             let completedCount = 0;
             const totalCount = memeIds.length;
-            
+
             const checkStatus = () => {
-                Promise.all(memeIds.map(id => 
+                Promise.all(memeIds.map(id =>
                     fetch(`${BASE_URL}/api/memes/${id}?t=${Date.now()}`, { cache: 'no-store' })
                         .then(r => r.json())
                 )).then(responses => {
-                    completedCount = responses.filter(r => 
+                    completedCount = responses.filter(r =>
                         r.success && (r.meme.status === 'done' || r.meme.status === 'error')
                     ).length;
-                    
-                    document.getElementById('uploadStatus').textContent = 
+
+                    document.getElementById('uploadStatus').textContent =
                         `Processing: ${completedCount}/${totalCount} completed`;
-                    
+
                     if (completedCount === totalCount) {
                         // All done!
                         document.getElementById('uploadStatus').textContent = 'Upload complete!';
                         document.getElementById('uploadStatus').className = 'upload-status success';
-                        
+
                         setTimeout(() => {
                             closeUploadModal();
-                            
+
                             // Redirect based on count
                             if (memeIds.length === 1) {
                                 window.location.href = `${BASE_URL}/meme/${memeIds[0]}`;
@@ -634,10 +640,10 @@
                     }
                 });
             };
-            
+
             checkStatus();
         }
-        
+
         function handleUploadError(error) {
             document.getElementById('uploadStatus').textContent = 'Error: ' + error;
             document.getElementById('uploadStatus').className = 'upload-status error';
@@ -645,60 +651,60 @@
             document.getElementById('uploadCancelBtn').disabled = false;
         }
     </script>
-    
+
     <script>
         // Get base URL for API calls (for multi-tenant support)
         const BASE_URL = '{{ base_url }}';
-        
+
         let initialFullTags = [];
         let initialPartialTags = [];
         let userChangedTags = new Set();
-        
+
         // Clear checkboxes and hide bulk actions on page load
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             document.querySelectorAll('.meme-checkbox').forEach(cb => cb.checked = false);
             document.getElementById('bulkActions').classList.remove('visible');
         });
-        
+
         function scrollToTop() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
-        
+
         function toggleBulkActions(event) {
             event.stopPropagation();
             const anyChecked = document.querySelectorAll('.meme-checkbox:checked').length > 0;
             document.getElementById('bulkActions').classList.toggle('visible', anyChecked);
         }
-        
+
         function cancelBulkSelect() {
             document.querySelectorAll('.meme-checkbox').forEach(cb => cb.checked = false);
             document.getElementById('bulkActions').classList.remove('visible');
         }
-        
+
         function toggleSelectAll() {
             const checkboxes = document.querySelectorAll('.meme-checkbox');
             const checkedCount = document.querySelectorAll('.meme-checkbox:checked').length;
             const allSelected = checkedCount === checkboxes.length;
-            
+
             // If all are selected, deselect all; otherwise, select all
             checkboxes.forEach(cb => cb.checked = !allSelected);
-            
+
             // Update the bulk actions visibility based on whether any checkboxes are now checked
             const anyChecked = document.querySelectorAll('.meme-checkbox:checked').length > 0;
             document.getElementById('bulkActions').classList.toggle('visible', anyChecked);
         }
-        
+
         function handleTagChange(checkbox) {
             const tagId = String(checkbox.value);
             // Mark as user-changed
             userChangedTags.add(tagId);
             updateTagHighlight(checkbox.parentElement);
         }
-        
+
         function toggleTag(element) {
             const checkbox = element.querySelector('input[type="checkbox"]');
             const tagId = String(checkbox.value);
-            
+
             // If indeterminate, clicking should make it checked (not unchecked)
             if (checkbox.indeterminate) {
                 checkbox.indeterminate = false;
@@ -706,19 +712,19 @@
             } else {
                 checkbox.checked = !checkbox.checked;
             }
-            
+
             // Mark as user-changed
             userChangedTags.add(tagId);
             updateTagHighlight(element);
         }
-        
+
         function updateTagHighlight(element) {
             const checkbox = element.querySelector('input[type="checkbox"]');
             const tagId = String(checkbox.value);
             const wasInitiallyFull = initialFullTags.includes(tagId);
             const wasInitiallyPartial = initialPartialTags.includes(tagId);
             const isNowChecked = checkbox.checked;
-            
+
             // Determine initial state
             let initialState;
             if (wasInitiallyFull) {
@@ -728,92 +734,92 @@
             } else {
                 initialState = 'unchecked';
             }
-            
+
             // Determine current state
             let currentState = isNowChecked ? 'checked' : 'unchecked';
-            
+
             // Tag is changed if user explicitly interacted (not in initial partial state)
             const isChanged = userChangedTags.has(tagId);
             element.classList.toggle('selected', isChanged);
         }
-        
+
         function updateAllHighlights() {
             document.querySelectorAll('.tag-option').forEach(opt => {
                 updateTagHighlight(opt);
             });
         }
-        
+
         function openTagModal() {
             const selected = Array.from(document.querySelectorAll('.meme-checkbox:checked'))
                 .map(cb => parseInt(cb.dataset.id));
-            
+
             if (selected.length === 0) {
                 alert('Please select at least one meme');
                 return;
             }
-            
+
             document.getElementById('tagModal').classList.add('active');
-            
+
             // Reset all tag selections
             document.querySelectorAll('.tag-option').forEach(opt => {
                 opt.classList.remove('selected');
                 opt.querySelector('input[type="checkbox"]').checked = false;
             });
-            
+
             // Fetch current tags for selected memes
             fetch(`${BASE_URL}/api/bulk-memes-tags`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ meme_ids: selected })
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Store initial states
-                    initialFullTags = data.full_tags.map(id => String(id));
-                    initialPartialTags = data.partial_tags.map(id => String(id));
-                    userChangedTags.clear();
-                    
-                    // Set checkbox states
-                    document.querySelectorAll('#tagModal input[name="tags"]').forEach(cb => {
-                        const tagId = String(cb.value);
-                        if (initialFullTags.includes(tagId)) {
-                            cb.checked = true;
-                            cb.indeterminate = false;
-                        } else if (initialPartialTags.includes(tagId)) {
-                            cb.checked = false;
-                            cb.indeterminate = true;
-                        } else {
-                            cb.checked = false;
-                            cb.indeterminate = false;
-                        }
-                    });
-                    
-                    updateAllHighlights();
-                }
-            })
-            .catch(error => console.error('Error fetching current tags:', error));
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Store initial states
+                        initialFullTags = data.full_tags.map(id => String(id));
+                        initialPartialTags = data.partial_tags.map(id => String(id));
+                        userChangedTags.clear();
+
+                        // Set checkbox states
+                        document.querySelectorAll('#tagModal input[name="tags"]').forEach(cb => {
+                            const tagId = String(cb.value);
+                            if (initialFullTags.includes(tagId)) {
+                                cb.checked = true;
+                                cb.indeterminate = false;
+                            } else if (initialPartialTags.includes(tagId)) {
+                                cb.checked = false;
+                                cb.indeterminate = true;
+                            } else {
+                                cb.checked = false;
+                                cb.indeterminate = false;
+                            }
+                        });
+
+                        updateAllHighlights();
+                    }
+                })
+                .catch(error => console.error('Error fetching current tags:', error));
         }
-        
+
         function closeTagModal() {
             document.getElementById('tagModal').classList.remove('active');
         }
-        
+
         function applyTags() {
             const selected = Array.from(document.querySelectorAll('.meme-checkbox:checked'))
                 .map(cb => parseInt(cb.dataset.id));
-            
+
             const allCheckboxes = document.querySelectorAll('#tagModal input[name="tags"]');
             const tagsToAdd = [];
             const tagsToRemove = [];
-            
+
             allCheckboxes.forEach(cb => {
                 const tagId = String(cb.value);
                 const wasInitiallyFull = initialFullTags.includes(tagId);
                 const wasInitiallyPartial = initialPartialTags.includes(tagId);
                 const wasUserChanged = userChangedTags.has(tagId);
                 const isNowChecked = cb.checked;
-                
+
                 // Only act on tags that the user changed
                 if (wasUserChanged) {
                     if (isNowChecked) {
@@ -829,64 +835,64 @@
                 // - initialPartial (indeterminate initially): stays as-is per meme (no action)
                 // - initialNone (unchecked initially): stays off all (already off, no action)
             });
-            
+
             if (tagsToAdd.length === 0 && tagsToRemove.length === 0) {
                 alert('Please select or deselect at least one tag');
                 return;
             }
-            
+
             fetch(`${BASE_URL}/api/bulk-tags`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     meme_ids: selected,
                     tag_ids: tagsToAdd,
                     remove_tag_ids: tagsToRemove
                 })
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    closeTagModal();
-                    // Clear all meme checkboxes
-                    document.querySelectorAll('.meme-checkbox').forEach(cb => cb.checked = false);
-                    // Hide bulk actions
-                    document.getElementById('bulkActions').classList.remove('visible');
-                    location.reload();
-                } else {
-                    alert('Error: ' + data.error);
-                }
-            })
-            .catch(error => alert('Error: ' + error));
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        closeTagModal();
+                        // Clear all meme checkboxes
+                        document.querySelectorAll('.meme-checkbox').forEach(cb => cb.checked = false);
+                        // Hide bulk actions
+                        document.getElementById('bulkActions').classList.remove('visible');
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                })
+                .catch(error => alert('Error: ' + error));
         }
-        
+
         function bulkDelete() {
             const selected = Array.from(document.querySelectorAll('.meme-checkbox:checked'))
                 .map(cb => cb.dataset.id);
-            
+
             if (selected.length === 0) return;
-            
+
             const message = `Are you sure you want to permanently delete ${selected.length} meme(s)?\n\nThis will delete:\n- The database entries\n- All tags\n- The image files\n\nThis action cannot be undone!`;
-            
+
             if (!confirm(message)) return;
-            
+
             fetch(`${BASE_URL}/api/bulk-delete`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids: selected })
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert('Error: ' + data.error);
-                }
-            })
-            .catch(error => alert('Error: ' + error));
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                })
+                .catch(error => alert('Error: ' + error));
         }
         // Build a tag map from the server-provided all_tags
-        const ALL_TAGS = {{ all_tags|tojson }};
+        const ALL_TAGS = {{ all_tags| tojson }};
         const TAG_BY_ID = Object.fromEntries((ALL_TAGS || []).map(t => [String(t.id), t]));
 
         function bulkScanTags() {
@@ -918,74 +924,74 @@
             selected.forEach(id => startTagScanJobForCard(id, onDone));
         }
 
-        function startTagScanJobForCard(memeId, onDone){
+        function startTagScanJobForCard(memeId, onDone) {
             fetch(`${BASE_URL}/api/memes/${memeId}/scan-tags`, {
                 method: 'POST',
                 headers: { 'Accept': 'application/json' }
             })
-            .then(r => r.json().catch(() => ({})).then(j => ({ ok: r.ok, body: j })))
-            .then(({ ok, body }) => {
-                if (!ok || !body.success) {
-                    throw new Error((body && (body.error || body.message)) || 'Request failed');
-                }
-                if (body.job_id){
-                    pollTagScanJobForCard(memeId, body.job_id, onDone);
-                } else {
-                    // Fallback: just refresh this card once after delay
-                    setTimeout(() => {
-                        refreshCardTags(memeId);
-                        if (typeof onDone === 'function') onDone(false);
-                    }, 1500);
-                }
-            })
-            .catch(err => {
-                console.error('Error starting scan:', err);
-                if (typeof onDone === 'function') onDone(false);
-            });
+                .then(r => r.json().catch(() => ({})).then(j => ({ ok: r.ok, body: j })))
+                .then(({ ok, body }) => {
+                    if (!ok || !body.success) {
+                        throw new Error((body && (body.error || body.message)) || 'Request failed');
+                    }
+                    if (body.job_id) {
+                        pollTagScanJobForCard(memeId, body.job_id, onDone);
+                    } else {
+                        // Fallback: just refresh this card once after delay
+                        setTimeout(() => {
+                            refreshCardTags(memeId);
+                            if (typeof onDone === 'function') onDone(false);
+                        }, 1500);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error starting scan:', err);
+                    if (typeof onDone === 'function') onDone(false);
+                });
         }
 
-        function pollTagScanJobForCard(memeId, jobId, onDone){
+        function pollTagScanJobForCard(memeId, jobId, onDone) {
             let ticks = 0;
             const maxTicks = 120;
             const tick = () => {
                 fetch(`${BASE_URL}/api/jobs/${jobId}/status?t=${Date.now()}`, { cache: 'no-store' })
-                  .then(r => r.json())
-                  .then(data => {
-                      if (!data || !data.success) throw new Error('Status fetch failed');
-                      if (data.status === 'completed') {
-                          refreshCardTags(memeId);
-                          if (typeof onDone === 'function') onDone(Boolean(data.applied));
-                          return;
-                      }
-                      ticks++;
-                      if (ticks < maxTicks) {
-                          setTimeout(tick, 1000);
-                      }
-                  })
-                  .catch(() => {
-                      ticks++;
-                      if (ticks < maxTicks){
-                          setTimeout(tick, 1000);
-                      } else {
-                          if (typeof onDone === 'function') onDone(false);
-                      }
-                  });
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data || !data.success) throw new Error('Status fetch failed');
+                        if (data.status === 'completed') {
+                            refreshCardTags(memeId);
+                            if (typeof onDone === 'function') onDone(Boolean(data.applied));
+                            return;
+                        }
+                        ticks++;
+                        if (ticks < maxTicks) {
+                            setTimeout(tick, 1000);
+                        }
+                    })
+                    .catch(() => {
+                        ticks++;
+                        if (ticks < maxTicks) {
+                            setTimeout(tick, 1000);
+                        } else {
+                            if (typeof onDone === 'function') onDone(false);
+                        }
+                    });
             };
             tick();
         }
 
-        function refreshCardTags(memeId){
+        function refreshCardTags(memeId) {
             fetch(`${BASE_URL}/api/memes/${memeId}?t=${Date.now()}`, { cache: 'no-store' })
-              .then(r => r.json())
-              .then(data => {
-                  if (!data || !data.success || !data.meme) return;
-                  const ids = Array.isArray(data.meme.tag_ids) ? data.meme.tag_ids : [];
-                  applyCardTagList(memeId, ids);
-              })
-              .catch(() => {});
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || !data.success || !data.meme) return;
+                    const ids = Array.isArray(data.meme.tag_ids) ? data.meme.tag_ids : [];
+                    applyCardTagList(memeId, ids);
+                })
+                .catch(() => { });
         }
 
-        function applyCardTagList(memeId, tagIds){
+        function applyCardTagList(memeId, tagIds) {
             const wrap = document.querySelector(`.meme-card-wrapper input.meme-checkbox[data-id="${memeId}"]`);
             if (!wrap) return;
             const card = wrap.closest('.meme-card-wrapper');
@@ -993,7 +999,7 @@
             const content = card.querySelector('.meme-content');
             if (!content) return;
             let tagsEl = content.querySelector('.meme-tags');
-            if (!tagsEl){
+            if (!tagsEl) {
                 tagsEl = document.createElement('div');
                 tagsEl.className = 'meme-tags';
                 content.appendChild(tagsEl);
@@ -1015,7 +1021,7 @@
                 span.style.backgroundColor = t.color;
                 tagsEl.appendChild(span);
             });
-            if (rest.length > 0){
+            if (rest.length > 0) {
                 const more = document.createElement('span');
                 more.className = 'meme-tag more';
                 more.title = rest.map(t => t.name).join(', ');
@@ -1072,60 +1078,61 @@
 
             // Adjust after fonts finish loading (text height changes)
             if (document.fonts && document.fonts.ready) {
-                document.fonts.ready.then(resizeAllGridItems).catch(() => {});
+                document.fonts.ready.then(resizeAllGridItems).catch(() => { });
             }
         });
     </script>
 
-<!-- jQuery 1.7+ -->
-<script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
+    <!-- jQuery 1.7+ -->
+    <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
 
-{% if clippy_agent and clippy_agent != 'none' %}
-<!-- Clippy.js -->
-<script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
-<!-- Clippy Phrase Management -->
-<script src="{{ url_for('static', filename='js/clippy-phrases.js') }}"></script>
-<!-- Clippy Session Management -->
-<script src="{{ url_for('static', filename='js/clippy-session.js') }}"></script>
-<!-- Clippy Debug Functions -->
-<script src="{{ url_for('static', filename='js/clippy-debug.js') }}"></script>
+    {% if clippy_agent and clippy_agent != 'none' %}
+    <!-- Clippy.js -->
+    <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
+    <!-- Clippy Phrase Management -->
+    <script src="{{ url_for('static', filename='js/clippy-phrases.js') }}"></script>
+    <!-- Clippy Session Management -->
+    <script src="{{ url_for('static', filename='js/clippy-session.js') }}"></script>
+    <!-- Clippy Debug Functions -->
+    <script src="{{ url_for('static', filename='js/clippy-debug.js') }}"></script>
 
-<!-- Init script -->
-<script type="text/javascript">
-    initClippyWithSession('{{ clippy_agent }}', {
-        useAnimations: false, // Use instant show during active session
-        onLoad: function(agent, sessionState, willRestoreAnimation, clearSavedState, willSpeakQuip) {
-            try {
-                var params = new URLSearchParams(window.location.search || '');
-                var q = params.get('search');
-                if (q && q.trim().length > 0 && agent.hasAnimation && agent.hasAnimation('Searching')) {
-                    // Page-specific animation should always play - clear saved state if restoring
-                    if (willRestoreAnimation && clearSavedState) {
-                        clearSavedState();
-                    }
-                    
-                    // If a quip will be spoken, load and speak it first, then play animation
-                    if (willSpeakQuip) {
-                        window.loadClippyPhrases().then(function() {
-                            var categories = window.getQuipCategoriesForPage();
-                            var quip = window.getRandomClippyPhrase(categories);
-                            agent.speak(quip);
-                            // Record that we spoke a quip
-                            localStorage.setItem('clippy_last_quip_time', Date.now().toString());
-                            localStorage.setItem('clippy_pages_since_quip', '0');
-                            // Animation will queue after the speech
+    <!-- Init script -->
+    <script type="text/javascript">
+        initClippyWithSession('{{ clippy_agent }}', {
+            useAnimations: false, // Use instant show during active session
+            onLoad: function (agent, sessionState, willRestoreAnimation, clearSavedState, willSpeakQuip) {
+                try {
+                    var params = new URLSearchParams(window.location.search || '');
+                    var q = params.get('search');
+                    if (q && q.trim().length > 0 && agent.hasAnimation && agent.hasAnimation('Searching')) {
+                        // Page-specific animation should always play - clear saved state if restoring
+                        if (willRestoreAnimation && clearSavedState) {
+                            clearSavedState();
+                        }
+
+                        // If a quip will be spoken, load and speak it first, then play animation
+                        if (willSpeakQuip) {
+                            window.loadClippyPhrases().then(function () {
+                                var categories = window.getQuipCategoriesForPage();
+                                var quip = window.getRandomClippyPhrase(categories);
+                                agent.speak(quip);
+                                // Record that we spoke a quip
+                                localStorage.setItem('clippy_last_quip_time', Date.now().toString());
+                                localStorage.setItem('clippy_pages_since_quip', '0');
+                                // Animation will queue after the speech
+                                agent.play('Searching', 4000);
+                            });
+                        } else {
+                            // No quip, just play animation immediately
                             agent.play('Searching', 4000);
-                        });
-                    } else {
-                        // No quip, just play animation immediately
-                        agent.play('Searching', 4000);
+                        }
                     }
-                }
-            } catch (e) {}
-        }
-    });
-</script>
-{% endif %}
+                } catch (e) { }
+            }
+        });
+    </script>
+    {% endif %}
 
 </body>
+
 </html>
