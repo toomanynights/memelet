@@ -55,10 +55,10 @@
 
         <div class="section">
             <h2>🔑 Replicate API Key</h2>
-            {% if is_managed_instance %}
+            {% if api_key_configured_externally %}
             <p class="action-description">
-                <strong>✅ Managed by Memelord:</strong> This instance uses Memelord's shared Replicate API. No
-                configuration needed!
+                <strong>✅ API Key Configured via Environment:</strong> An API key is provided by the environment. No
+                manual configuration needed!
             </p>
             <div style="margin-top: 15px;">
                 <button type="button" class="btn" id="show-custom-key-btn" onclick="showCustomKeyForm()">

@@ -66,20 +66,6 @@ The installer will:
 
 Memelet can be configured via environment variables or a `.env` file. See `.env.example` for all available options.
 
-### Key Configuration Options
-
-- `MEMES_DIR`: Directory where meme files are stored
-- `BASE_URL`: Public URL where Memelet is accessible
-- `HOST` / `PORT`: Server binding settings
-- `TZ`: Timezone for logs and timestamps
-- `SECRET_KEY`: Flask secret key for session security (see below)
-- `REPLICATE_API_TOKEN`: API token for AI analysis (can also be set in web UI)
-
-### Generating a Secure SECRET_KEY
-
-**Important:** You must set a secure SECRET_KEY for production use!
-
-```bash
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 

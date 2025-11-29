@@ -48,11 +48,12 @@ def load_user(user_id):
 # Note: Don't cache paths at import time - they need to be dynamic for multi-tenant
 
 # Default config
-app.config.setdefault('IS_MANAGED_INSTANCE', False)
-
 @app.context_processor
-def inject_managed_status():
-    return dict(is_managed_instance=app.config.get('IS_MANAGED_INSTANCE', False))
+def inject_api_key_status():
+    # Check if API key is provided via environment (e.g. by Memelord or user)
+    # This replaces the specific 'IS_MANAGED_INSTANCE' check with a generic one
+    has_env_key = bool(os.environ.get('REPLICATE_API_TOKEN'))
+    return dict(api_key_configured_externally=has_env_key)
 
 
 def get_memes_url_base_dynamic():
@@ -1061,8 +1062,8 @@ def trigger_action():
         api_key_row = cursor.fetchone()
         conn.close()
         
-        if not (api_key_row and api_key_row[0].strip()) and not app.config.get('IS_MANAGED_INSTANCE', False):
-            # Check if we have it in env (e.g. from sitecustomize)
+        if not (api_key_row and api_key_row[0].strip()):
+            # Check if we have it in env (e.g. from sitecustomize or manual env var)
             if not os.environ.get('REPLICATE_API_TOKEN'):
                 return {'success': False, 'message': 'Replicate API key not configured. Please set it in Settings first.'}
         
@@ -1076,15 +1077,10 @@ def trigger_action():
             env['MEMES_URL_BASE'] = get_memes_url_base()  # Critical for Replicate API image URLs
             env['VENV_DIR'] = get_venv_dir()
             
-            # Shell script is in the shared branch directory for multi-tenant
-            if 'INSTANCE_NAME' in app.config:
-                # Multi-tenant mode: script is in shared branch directory
-                branch = 'main'  # TODO: Get from config if needed
-                branch_shared_dir = Path(script_dir).parent.parent / 'branches' / branch / 'shared'
-                shell_script = str(branch_shared_dir / 'run_scan.sh')
-            else:
-                # Standalone mode: script is in same directory
-                shell_script = os.path.join(script_dir, 'run_scan.sh')
+            # Script resolution using configuration
+            script_dir = app.config.get('HELPER_SCRIPTS_DIR', get_script_dir())
+            shell_script = os.path.join(script_dir, 'run_scan.sh')
+
             
             subprocess.Popen(
                 [shell_script],
@@ -1112,15 +1108,10 @@ def trigger_action():
             env['MEMES_URL_BASE'] = get_memes_url_base()  # Critical for Replicate API image URLs
             env['VENV_DIR'] = get_venv_dir()
             
-            # Shell script is in the shared branch directory for multi-tenant
-            if 'INSTANCE_NAME' in app.config:
-                # Multi-tenant mode: script is in shared branch directory
-                branch = 'main'  # TODO: Get from config if needed
-                branch_shared_dir = Path(script_dir).parent.parent / 'branches' / branch / 'shared'
-                shell_script = str(branch_shared_dir / 'retry_errors.sh')
-            else:
-                # Standalone mode: script is in same directory
-                shell_script = os.path.join(script_dir, 'retry_errors.sh')
+            # Script resolution using configuration
+            script_dir = app.config.get('HELPER_SCRIPTS_DIR', get_script_dir())
+            shell_script = os.path.join(script_dir, 'retry_errors.sh')
+
             
             subprocess.Popen(
                 [shell_script],
@@ -1141,17 +1132,11 @@ def trigger_action():
         venv_dir = get_venv_dir()
         venv_python = os.path.join(venv_dir, "bin", "python")
         
-        # Process script is in the shared branch directory for multi-tenant
-        if 'INSTANCE_NAME' in app.config:
-            # Multi-tenant mode: script is in shared branch directory
-            branch = 'main'  # TODO: Get from config if needed
-            branch_shared_dir = Path(instance_dir).parent.parent / 'branches' / branch / 'shared'
-            script_path = str(branch_shared_dir / 'process_memes.py')
-            working_dir = str(branch_shared_dir)
-        else:
-            # Standalone mode: script is in same directory
-            script_path = os.path.join(instance_dir, 'process_memes.py')
-            working_dir = instance_dir
+        # Script resolution using configuration
+        script_dir = app.config.get('HELPER_SCRIPTS_DIR', instance_dir)
+        script_path = os.path.join(script_dir, 'process_memes.py')
+        working_dir = script_dir  # Run in the script directory to ensure imports work
+
         
         log_file = os.path.join(get_log_dir(), "scan.log")
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -1300,17 +1285,11 @@ def process_single_meme(meme_id: int):
     venv_dir = get_venv_dir()
     venv_python = os.path.join(venv_dir, "bin", "python")
     
-    # Process script is in the shared branch directory for multi-tenant
-    if 'INSTANCE_NAME' in app.config:
-        # Multi-tenant mode: script is in shared branch directory
-        branch = 'main'  # TODO: Get from config if needed
-        branch_shared_dir = Path(instance_dir).parent.parent / 'branches' / branch / 'shared'
-        script_path = str(branch_shared_dir / 'process_memes.py')
-        working_dir = str(branch_shared_dir)
-    else:
-        # Standalone mode: script is in same directory
-        script_path = os.path.join(instance_dir, 'process_memes.py')
-        working_dir = instance_dir
+    # Script resolution using configuration
+    script_dir = app.config.get('HELPER_SCRIPTS_DIR', instance_dir)
+    script_path = os.path.join(script_dir, 'process_memes.py')
+    working_dir = script_dir
+
     
     log_file = os.path.join(get_log_dir(), "scan.log")
 
