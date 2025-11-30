@@ -17,6 +17,7 @@ from config import get_db_path, get_memes_url_base, get_memes_dir, get_log_dir, 
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+app.config['TEMPLATES_AUTO_RELOAD'] = True  # Enable template auto-reload
 
 # Flask-Login setup
 login_manager = LoginManager()

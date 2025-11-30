@@ -32,3 +32,4 @@ files/_system/thumbnails/*
 .vscode/
 .trash/
 .agent/
+.claude/
