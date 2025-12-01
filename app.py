@@ -12,8 +12,10 @@ from pathlib import Path
 import os
 import hashlib
 import subprocess
+import sys
 from datetime import datetime, timedelta
 from config import get_db_path, get_memes_url_base, get_memes_dir, get_log_dir, get_script_dir, get_venv_dir, get_host, get_port
+import atexit
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
@@ -27,6 +29,75 @@ login_manager.session_protection = 'strong'
 
 # Set session lifetime to 2 weeks
 app.permanent_session_lifetime = timedelta(days=14)
+
+# Automatic hourly scanning scheduler (only in standalone mode, not multi-tenant)
+# Check if we're running in multi-tenant mode by checking for INSTANCE_NAME in config
+# Global variable to store the scan function for API access
+_hourly_scan_function = None
+
+if 'INSTANCE_NAME' not in app.config:
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        
+        scheduler = BackgroundScheduler()
+        
+        def run_hourly_scan():
+            """Trigger hourly scan in standalone mode"""
+            try:
+                script_dir = get_script_dir()
+                log_dir = get_log_dir()
+                shell_script = os.path.join(script_dir, 'run_scan.sh')
+                
+                if os.path.exists(shell_script):
+                    env = os.environ.copy()
+                    env['SCRIPT_DIR'] = script_dir
+                    env['LOG_DIR'] = log_dir
+                    env['DB_PATH'] = get_db_path()
+                    env['MEMES_DIR'] = get_memes_dir()
+                    env['MEMES_URL_BASE'] = get_memes_url_base()
+                    env['VENV_DIR'] = get_venv_dir()
+                    # Ensure PATH includes standard locations for bash
+                    env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+                    
+                    # Use full path to bash to avoid PATH issues in systemd
+                    bash_path = '/bin/bash'
+                    if not os.path.exists(bash_path):
+                        bash_path = '/usr/bin/bash'
+                    
+                    # Execute with bash explicitly to ensure it runs
+                    subprocess.Popen(
+                        [bash_path, shell_script],
+                        stdout=subprocess.DEVNULL,
+                        stderr=open(os.path.join(log_dir, 'scan_errors.log'), 'a'),
+                        env=env,
+                        start_new_session=True
+                    )
+                    app.logger.info("Hourly scan triggered")
+            except Exception as e:
+                app.logger.error(f"Failed to trigger hourly scan: {e}")
+        
+        # Store function globally for API access
+        _hourly_scan_function = run_hourly_scan
+        
+        # Schedule hourly scan at :00 of every hour
+        scheduler.add_job(
+            func=run_hourly_scan,
+            trigger=CronTrigger.from_crontab('0 * * * *'),
+            id='hourly_scan',
+            name='Hourly Memelet Scan',
+            replace_existing=True
+        )
+        
+        scheduler.start()
+        atexit.register(lambda: scheduler.shutdown())
+        app.logger.info("Automatic hourly scanning enabled (standalone mode)")
+    except Exception as e:
+        app.logger.error(f"Failed to set up scheduler: {e}")
+        import traceback
+        traceback.print_exc()
+else:
+    app.logger.info("Running in multi-tenant mode - scanning managed by Memelord")
 
 # User class for Flask-Login
 class User(UserMixin):
@@ -778,7 +849,6 @@ def meme_detail(meme_id):
 @login_required
 def delete_meme(meme_id):
     """Delete a meme from database and filesystem"""
-    import os
     
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -812,7 +882,6 @@ def delete_meme(meme_id):
 @login_required
 def bulk_delete():
     """Delete multiple memes"""
-    import os
     
     data = request.get_json()
     ids = data.get('ids', [])
@@ -1001,7 +1070,6 @@ def bulk_memes_tags():
 @login_required
 def settings():
     """Settings page with logs"""
-    import os
     
     # Read log file - get last complete entry
     log_path = os.path.join(get_log_dir(), "scan.log")
@@ -1042,12 +1110,29 @@ def settings():
                          username=current_user.username,
                          base_url=base_url)
 
+@app.route('/api/trigger-scheduled-scan', methods=['POST'])
+@login_required
+def trigger_scheduled_scan():
+    """API endpoint to manually trigger the scheduled scan function (for testing)"""
+    global _hourly_scan_function
+    
+    if 'INSTANCE_NAME' in app.config:
+        return {'success': False, 'message': 'Not available in multi-tenant mode'}, 400
+    
+    if _hourly_scan_function is None:
+        return {'success': False, 'message': 'Scheduled scan function not available'}, 500
+    
+    try:
+        _hourly_scan_function()
+        return {'success': True, 'message': 'Scheduled scan triggered successfully'}
+    except Exception as e:
+        app.logger.error(f"Failed to trigger scheduled scan: {e}")
+        return {'success': False, 'message': f'Failed to trigger scan: {str(e)}'}, 500
+
 @app.route('/api/trigger-action', methods=['POST'])
 @login_required
 def trigger_action():
     """API endpoint to trigger background actions"""
-    import subprocess
-    
     data = request.get_json()
     action = data.get('action')
     
@@ -1077,14 +1162,20 @@ def trigger_action():
             env['MEMES_DIR'] = get_memes_dir()
             env['MEMES_URL_BASE'] = get_memes_url_base()  # Critical for Replicate API image URLs
             env['VENV_DIR'] = get_venv_dir()
+            # Ensure PATH includes standard locations for bash
+            env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
             
             # Script resolution using configuration
             script_dir = app.config.get('HELPER_SCRIPTS_DIR', get_script_dir())
             shell_script = os.path.join(script_dir, 'run_scan.sh')
-
+            
+            # Use full path to bash to avoid PATH issues in systemd
+            bash_path = '/bin/bash'
+            if not os.path.exists(bash_path):
+                bash_path = '/usr/bin/bash'
             
             subprocess.Popen(
-                [shell_script],
+                [bash_path, shell_script],
                 stdout=subprocess.DEVNULL,
                 stderr=open(os.path.join(log_dir, 'scan_errors.log'), 'a'),
                 env=env,
@@ -1127,7 +1218,6 @@ def trigger_action():
     
     elif action == 'scan_tags_all':
         # Run tags-only scan for all memes using process_memes.py
-        import os
         from datetime import datetime
         instance_dir = get_script_dir()  # Instance directory
         venv_dir = get_venv_dir()
@@ -1177,7 +1267,7 @@ def trigger_action():
 @login_required
 def scan_tags_single_meme(meme_id: int):
     """Trigger a tags-only scan for a single meme (path + AI-from-text)."""
-    import subprocess, os
+    import subprocess
     from datetime import datetime
 
     script_dir = get_script_dir()
@@ -1213,7 +1303,7 @@ def scan_tags_single_meme(meme_id: int):
 @login_required
 def bulk_scan_tags():
     """Trigger tags-only scan for a set of selected meme IDs."""
-    import subprocess, os
+    import subprocess
     from datetime import datetime
     data = request.get_json(silent=True) or {}
     meme_ids = data.get('meme_ids', [])
@@ -1254,7 +1344,7 @@ def bulk_scan_tags():
 @login_required
 def job_status(job_id: str):
     """Return scan-tag job status by scanning the log for the COMPLETE marker."""
-    import os, re
+    import re
     log_file = os.path.join(get_log_dir(), "scan.log")
     if not os.path.exists(log_file):
         return {'success': True, 'status': 'pending'}
@@ -1279,7 +1369,7 @@ def job_status(job_id: str):
 @login_required
 def process_single_meme(meme_id: int):
     """Trigger processing of a single meme in background and log to scan.log."""
-    import subprocess, os
+    import subprocess
     from datetime import datetime
 
     instance_dir = get_script_dir()  # Instance directory

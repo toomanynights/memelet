@@ -16,3 +16,6 @@ opencv-python>=4.8.0
 
 # HTTP requests (for Memelord proxy)
 requests>=2.31.0
+
+# Task scheduling (for automatic hourly scans in standalone mode)
+APScheduler>=3.10.0
