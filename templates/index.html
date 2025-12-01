@@ -577,8 +577,33 @@
                     } else {
                         handleUploadError(response.error || 'Upload failed');
                     }
+                } else if (xhr.status === 413) {
+                    // Handle quota exceeded error
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        if (response.error && response.message) {
+                            // Show detailed quota error with user-friendly formatting
+                            const quotaMsg = `${response.message}\n\n` +
+                                `📊 Disk Usage:\n` +
+                                `   • Current: ${response.current_usage_mb}MB / ${response.disk_quota_mb}MB (${Math.round(response.current_usage_mb / response.disk_quota_mb * 100)}%)\n` +
+                                `   • Remaining: ${response.remaining_mb}MB\n` +
+                                `   • Upload size: ${response.upload_size_mb}MB\n\n` +
+                                `💡 Tip: Delete some files to free up space before uploading.`;
+                            handleUploadError(quotaMsg);
+                        } else {
+                            handleUploadError('Upload failed: File too large (quota exceeded)');
+                        }
+                    } catch (e) {
+                        handleUploadError('Upload failed: File too large (quota exceeded)');
+                    }
                 } else {
-                    handleUploadError('Upload failed with status ' + xhr.status);
+                    // Try to parse error response for other status codes
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        handleUploadError(response.error || response.message || 'Upload failed with status ' + xhr.status);
+                    } catch (e) {
+                        handleUploadError('Upload failed with status ' + xhr.status);
+                    }
                 }
             });
 
@@ -645,8 +670,14 @@
         }
 
         function handleUploadError(error) {
-            document.getElementById('uploadStatus').textContent = 'Error: ' + error;
-            document.getElementById('uploadStatus').className = 'upload-status error';
+            const statusEl = document.getElementById('uploadStatus');
+            // Handle multi-line errors by converting to HTML
+            if (error.includes('\n')) {
+                statusEl.innerHTML = 'Error: ' + error.replace(/\n/g, '<br>');
+            } else {
+                statusEl.textContent = 'Error: ' + error;
+            }
+            statusEl.className = 'upload-status error';
             document.getElementById('uploadBtn').disabled = false;
             document.getElementById('uploadCancelBtn').disabled = false;
         }

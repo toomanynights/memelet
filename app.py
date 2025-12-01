@@ -14,7 +14,7 @@ import hashlib
 import subprocess
 import sys
 from datetime import datetime, timedelta
-from config import get_db_path, get_memes_url_base, get_memes_dir, get_log_dir, get_script_dir, get_venv_dir, get_host, get_port
+from config import get_db_path, get_memes_url_base, get_memes_dir, get_log_dir, get_script_dir, get_venv_dir, get_host, get_port, get_disk_quota_mb, get_instance_path
 import atexit
 
 app = Flask(__name__)
@@ -1731,6 +1731,61 @@ def set_clippy_agent_setting():
     
     return jsonify({'success': True, 'agent_form': agent_form})
 
+@app.route('/api/settings/disk-usage', methods=['GET'])
+@login_required
+def get_disk_usage():
+    """Get disk usage information"""
+    try:
+        instance_path = Path(get_instance_path())
+        disk_quota_mb = get_disk_quota_mb()
+        
+        # Calculate current disk usage
+        total_size = 0
+        for item in instance_path.rglob('*'):
+            if item.is_file():
+                try:
+                    total_size += item.stat().st_size
+                except (OSError, PermissionError):
+                    pass
+        
+        current_usage_mb = total_size / (1024 * 1024)
+        
+        if disk_quota_mb is not None:
+            # Quota configured
+            remaining_mb = max(0, disk_quota_mb - current_usage_mb)
+            percent_used = min(100, (current_usage_mb / disk_quota_mb) * 100) if disk_quota_mb > 0 else 0
+            
+            return jsonify({
+                'success': True,
+                'quota_configured': True,
+                'current_usage_mb': round(current_usage_mb, 2),
+                'disk_quota_mb': disk_quota_mb,
+                'remaining_mb': round(remaining_mb, 2),
+                'percent_used': round(percent_used, 1)
+            })
+        else:
+            # No quota - show filesystem free space
+            import shutil
+            stat = shutil.disk_usage(instance_path)
+            total_mb = stat.total / (1024 * 1024)
+            used_mb = stat.used / (1024 * 1024)
+            free_mb = stat.free / (1024 * 1024)
+            percent_used = (stat.used / stat.total) * 100 if stat.total > 0 else 0
+            
+            return jsonify({
+                'success': True,
+                'quota_configured': False,
+                'current_usage_mb': round(current_usage_mb, 2),
+                'filesystem_total_mb': round(total_mb, 2),
+                'filesystem_used_mb': round(used_mb, 2),
+                'filesystem_free_mb': round(free_mb, 2),
+                'percent_used': round(percent_used, 1)
+            })
+            
+    except Exception as e:
+        app.logger.error(f"Error getting disk usage: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/settings/replicate-api-key', methods=['GET'])
 @login_required
 def get_replicate_api_key_setting():
@@ -1925,6 +1980,63 @@ def upload_files():
         
         # Ensure upload directories exist
         ensure_directories_exist()
+        
+        # Check disk space (either quota or filesystem free space)
+        disk_quota_mb = get_disk_quota_mb()
+        try:
+            instance_path = Path(get_instance_path())
+            
+            if disk_quota_mb is not None:
+                # Use configured quota
+                total_size = 0
+                for item in instance_path.rglob('*'):
+                    if item.is_file():
+                        try:
+                            total_size += item.stat().st_size
+                        except (OSError, PermissionError):
+                            pass
+                
+                current_usage_mb = total_size / (1024 * 1024)
+                remaining_mb = disk_quota_mb - current_usage_mb
+                quota_type = "quota"
+            else:
+                # No quota configured - use filesystem free space
+                import shutil
+                stat = shutil.disk_usage(instance_path)
+                remaining_mb = stat.free / (1024 * 1024)
+                current_usage_mb = 0  # Not applicable for filesystem check
+                quota_type = "filesystem"
+            
+            # Calculate upload size
+            upload_size = request.content_length or 0
+            upload_size_mb = upload_size / (1024 * 1024)
+            
+            # Check if upload would exceed available space
+            if upload_size_mb > remaining_mb:
+                app.logger.warning(f"Upload rejected: would exceed available space by {upload_size_mb - remaining_mb:.2f}MB")
+                
+                if disk_quota_mb is not None:
+                    # Quota-based error
+                    return jsonify({
+                        'error': 'Insufficient disk space',
+                        'message': f'Upload size ({upload_size_mb:.2f}MB) exceeds remaining quota ({remaining_mb:.2f}MB)',
+                        'current_usage_mb': round(current_usage_mb, 2),
+                        'disk_quota_mb': disk_quota_mb,
+                        'remaining_mb': round(remaining_mb, 2),
+                        'upload_size_mb': round(upload_size_mb, 2)
+                    }), 413
+                else:
+                    # Filesystem-based error
+                    return jsonify({
+                        'error': 'Insufficient disk space',
+                        'message': f'Upload size ({upload_size_mb:.2f}MB) exceeds available disk space ({remaining_mb:.2f}MB)',
+                        'free_space_mb': round(remaining_mb, 2),
+                        'upload_size_mb': round(upload_size_mb, 2)
+                    }), 413
+                
+        except Exception as e:
+            app.logger.error(f"Error checking disk space: {e}")
+            # Don't block upload if space check fails
         
         # Validate file types
         for file in files:

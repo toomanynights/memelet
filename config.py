@@ -112,3 +112,13 @@ def get_instance_path():
     # This is primarily for multi-tenant setups but provides fallback
     return get_config_value('INSTANCE_PATH', str(get_install_dir()), ['SCRIPT_DIR'])
 
+def get_disk_quota_mb():
+    """Get disk quota in MB (returns None if not set)"""
+    quota = get_config_value('DISK_QUOTA_MB')
+    if quota is not None:
+        try:
+            return int(quota)
+        except (ValueError, TypeError):
+            return None
+    return None
+

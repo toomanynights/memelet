@@ -131,6 +131,9 @@ TZ={config['timezone']}
 # Security
 SECRET_KEY={config['secret_key']}
 
+# Disk Quota (optional, in MB)
+DISK_QUOTA_MB={config.get('disk_quota_mb', '')}
+
 # API Keys (optional, can also be set in the web UI)
 REPLICATE_API_TOKEN={config.get('replicate_token', '')}
 """
@@ -207,6 +210,13 @@ def main():
     timezone = get_input("Timezone", "UTC")
     config['timezone'] = timezone
     
+    # Disk quota
+    print("\n--- Disk Quota ---\n")
+    print_info("Set a disk space limit for this Memelet instance")
+    print_info("Enter quota in MB (e.g., 5000 for 5GB) or leave blank for no limit")
+    disk_quota = get_input("Disk quota in MB (optional)", "")
+    config['disk_quota_mb'] = disk_quota if disk_quota else ""
+    
     # Secret key
     print_info("Generating secure secret key...")
     config['secret_key'] = generate_secret_key()
@@ -229,6 +239,8 @@ def main():
     print(f"Host:              {config['host']}")
     print(f"Port:              {config['port']}")
     print(f"Timezone:          {config['timezone']}")
+    disk_quota_display = f"{config['disk_quota_mb']}MB" if config['disk_quota_mb'] else "No limit"
+    print(f"Disk quota:        {disk_quota_display}")
     print()
     
     confirm = get_input("Proceed with installation? (yes/no)", "yes")

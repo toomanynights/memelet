@@ -54,6 +54,21 @@
         </div>
 
         <div class="section">
+            <h2>💾 Disk Usage</h2>
+            <p class="action-description" id="disk-usage-description">
+                Loading disk usage information...
+            </p>
+            <div class="disk-usage-container">
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="disk-usage-bar" style="width: 0%; background-color: #10b981;"></div>
+                </div>
+                <div class="disk-usage-info" id="disk-usage-info">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
             <h2>🔑 Replicate API Key</h2>
             {% if api_key_configured_externally %}
             <p class="action-description">
@@ -931,6 +946,107 @@
                 }
             });
         }
+
+        // Disk usage monitoring
+        function formatBytes(mb) {
+            if (mb < 1024) {
+                return mb.toFixed(2) + ' MB';
+            }
+            return (mb / 1024).toFixed(2) + ' GB';
+        }
+
+        function updateDiskUsage() {
+            fetch(`${BASE_URL}/api/settings/disk-usage`, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        const bar = document.getElementById('disk-usage-bar');
+                        const info = document.getElementById('disk-usage-info');
+                        const description = document.getElementById('disk-usage-description');
+                        
+                        // Update progress bar
+                        const percent = data.percent_used;
+                        bar.style.width = percent + '%';
+                        bar.setAttribute('data-percent', percent.toFixed(1) + '%');
+                        
+                        // Color based on usage
+                        if (percent < 70) {
+                            bar.style.backgroundColor = '#10b981'; // Green
+                        } else if (percent < 90) {
+                            bar.style.backgroundColor = '#f59e0b'; // Orange
+                        } else {
+                            bar.style.backgroundColor = '#ef4444'; // Red
+                        }
+                        
+                        // Update info display
+                        if (data.quota_configured) {
+                            description.textContent = `Monitoring disk quota: ${formatBytes(data.disk_quota_mb)} total`;
+                            
+                            info.innerHTML = `
+                                <div class="disk-usage-stat">
+                                    <div class="label">Current Usage</div>
+                                    <div class="value">${formatBytes(data.current_usage_mb)}</div>
+                                </div>
+                                <div class="disk-usage-stat">
+                                    <div class="label">Quota Limit</div>
+                                    <div class="value">${formatBytes(data.disk_quota_mb)}</div>
+                                </div>
+                                <div class="disk-usage-stat">
+                                    <div class="label">Remaining</div>
+                                    <div class="value">${formatBytes(data.remaining_mb)}</div>
+                                </div>
+                                <div class="disk-usage-stat">
+                                    <div class="label">Used</div>
+                                    <div class="value">${percent.toFixed(1)}%</div>
+                                </div>
+                            `;
+                        } else {
+                            description.textContent = `Monitoring filesystem: ${formatBytes(data.filesystem_total_mb)} total capacity`;
+                            
+                            info.innerHTML = `
+                                <div class="disk-usage-stat">
+                                    <div class="label">Instance Usage</div>
+                                    <div class="value">${formatBytes(data.current_usage_mb)}</div>
+                                </div>
+                                <div class="disk-usage-stat">
+                                    <div class="label">Filesystem Total</div>
+                                    <div class="value">${formatBytes(data.filesystem_total_mb)}</div>
+                                </div>
+                                <div class="disk-usage-stat">
+                                    <div class="label">Filesystem Free</div>
+                                    <div class="value">${formatBytes(data.filesystem_free_mb)}</div>
+                                </div>
+                                <div class="disk-usage-stat">
+                                    <div class="label">Disk Used</div>
+                                    <div class="value">${percent.toFixed(1)}%</div>
+                                </div>
+                            `;
+                        }
+                    } else {
+                        document.getElementById('disk-usage-description').textContent = 'Error loading disk usage: ' + data.error;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading disk usage:', error);
+                    document.getElementById('disk-usage-description').textContent = 'Error loading disk usage information';
+                });
+        }
+
+        // Load disk usage on page load
+        updateDiskUsage();
+
+        // Refresh disk usage every 30 seconds
+        setInterval(updateDiskUsage, 30000);
     </script>
     <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
     <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
