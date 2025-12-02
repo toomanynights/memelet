@@ -68,6 +68,21 @@
             </div>
         </div>
 
+        <div class="section" id="replicate-usage-section" style="display: none;">
+            <h2>🤖 Replicate Usage</h2>
+            <p class="action-description" id="replicate-usage-description">
+                <!-- Will be populated by JavaScript when a managed quota is configured -->
+            </p>
+            <div class="disk-usage-container">
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="replicate-usage-bar" style="width: 0%; background-color: #10b981;"></div>
+                </div>
+                <div class="disk-usage-info" id="replicate-usage-info">
+                    <!-- Will be populated by JavaScript when a managed quota is configured -->
+                </div>
+            </div>
+        </div>
+
         <div class="section">
             <h2>🔑 Replicate API Key</h2>
             {% if api_key_configured_externally %}
@@ -321,7 +336,7 @@
     <!-- API Key Management Script -->
     <script>
         // Get base URL for API calls (for multi-tenant support)
-        const BASE_URL = '{{ base_url }}';
+        const BASE_URL = '{{ base_url }}' || '';
 
         let currentApiKey = '';
         let hasExistingKey = false;
@@ -416,6 +431,9 @@
 
                         // Reload to show masked version
                         loadApiKey();
+                        
+                        // Update Replicate usage display (will hide quota section if BYOK is now active)
+                        updateReplicateUsage();
                     } else {
                         const msgEl = document.getElementById('api-key-message');
                         msgEl.innerHTML = '<div class="message error">Error saving API key: ' + (data.error || 'Unknown error') + '</div>';
@@ -751,7 +769,6 @@
                 return response.json();
             })
             .then(data => {
-                console.log('Agents API response:', data);
                 if (data.success) {
                     const container = document.getElementById('agentSelector');
                     if (!container) {
@@ -764,7 +781,6 @@
 
                     // Add all agents
                     if (data.agents && Array.isArray(data.agents)) {
-                        console.log(`Loading ${data.agents.length} agents`);
                         data.agents.forEach(agent => {
                             if (agent && agent.name) {
                                 container.appendChild(createAgentPreview(agent));
@@ -1042,11 +1058,107 @@
                 });
         }
 
-        // Load disk usage on page load
-        updateDiskUsage();
+        // Replicate usage monitoring (only shown when a managed quota is configured)
+        function updateReplicateUsage() {
+            fetch(`${BASE_URL}/api/settings/replicate-usage`, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const description = document.getElementById('replicate-usage-description');
+                    const bar = document.getElementById('replicate-usage-bar');
+                    const info = document.getElementById('replicate-usage-info');
+
+                    if (!data.quota_configured) {
+                        // No managed quota – hide the entire section
+                        const section = document.getElementById('replicate-usage-section');
+                        if (section) section.style.display = 'none';
+                        return;
+                    }
+
+                    const used = data.requests_used || 0;
+                    const limit = data.quota_limit || 0;
+                    const remaining = data.remaining_requests || 0;
+                    const percent = data.percent_used || 0;
+
+                    // Ensure section is visible when quota is configured
+                    const section = document.getElementById('replicate-usage-section');
+                    if (section) section.style.display = 'block';
+
+                    // Update progress bar
+                    bar.style.width = percent + '%';
+                    bar.setAttribute('data-percent', percent.toFixed(1) + '%');
+
+                    if (percent < 70) {
+                        bar.style.backgroundColor = '#10b981'; // Green
+                    } else if (percent < 90) {
+                        bar.style.backgroundColor = '#f59e0b'; // Orange
+                    } else {
+                        bar.style.backgroundColor = '#ef4444'; // Red
+                    }
+
+                    description.textContent = `Managed Replicate quota: ${used} of ${limit} requests used`;
+
+                    info.innerHTML = `
+                        <div class="disk-usage-stat">
+                            <div class="label">Requests Used</div>
+                            <div class="value">${used}</div>
+                        </div>
+                        <div class="disk-usage-stat">
+                            <div class="label">Quota Limit</div>
+                            <div class="value">${limit}</div>
+                        </div>
+                        <div class="disk-usage-stat">
+                            <div class="label">Remaining</div>
+                            <div class="value">${remaining}</div>
+                        </div>
+                        <div class="disk-usage-stat">
+                            <div class="label">Used</div>
+                            <div class="value">${percent.toFixed(1)}%</div>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    console.error('Error loading Replicate usage:', error);
+                    // On error, keep the section hidden so it doesn't clutter the UI
+                    const section = document.getElementById('replicate-usage-section');
+                    if (section) section.style.display = 'none';
+                });
+        }
+
+        // Load disk and Replicate usage on page load (ensure DOM is ready)
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                updateDiskUsage();
+                updateReplicateUsage();
+            });
+        } else {
+            // DOM is already ready
+            updateDiskUsage();
+            updateReplicateUsage();
+        }
 
         // Refresh disk usage every 30 seconds
         setInterval(updateDiskUsage, 30000);
+
+        // Refresh Replicate usage every 10 seconds (more frequent for quota tracking)
+        setInterval(updateReplicateUsage, 10000);
+        
+        // Refresh usage when page becomes visible (e.g., after processing memes)
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                updateDiskUsage();
+                updateReplicateUsage();
+            }
+        });
     </script>
     <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
     <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>

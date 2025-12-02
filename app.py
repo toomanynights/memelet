@@ -14,7 +14,20 @@ import hashlib
 import subprocess
 import sys
 from datetime import datetime, timedelta
-from config import get_db_path, get_memes_url_base, get_memes_dir, get_log_dir, get_script_dir, get_venv_dir, get_host, get_port, get_disk_quota_mb, get_instance_path
+from config import (
+    get_db_path,
+    get_memes_url_base,
+    get_memes_dir,
+    get_log_dir,
+    get_script_dir,
+    get_venv_dir,
+    get_host,
+    get_port,
+    get_disk_quota_mb,
+    get_instance_path,
+    get_replicate_quota_limit,
+    get_replicate_quota_used,
+)
 import atexit
 
 app = Flask(__name__)
@@ -122,10 +135,58 @@ def load_user(user_id):
 # Default config
 @app.context_processor
 def inject_api_key_status():
-    # Check if API key is provided via environment (e.g. by Memelord or user)
-    # This replaces the specific 'IS_MANAGED_INSTANCE' check with a generic one
-    has_env_key = bool(os.environ.get('REPLICATE_API_TOKEN'))
-    return dict(api_key_configured_externally=has_env_key)
+    """Inject flags describing how the Replicate API key is configured.
+
+    api_key_configured_externally:
+        True  -> a non-placeholder key is present in the environment and
+                 there is no saved key in the database.
+        False -> either no env key, or a DB key exists (BYOK / in-app config).
+    """
+    # Environment-provided key (ignore known placeholders)
+    env_key = os.environ.get('REPLICATE_API_TOKEN')
+    is_dummy_env_key = env_key == 'memelord-managed'
+    has_real_env_key = bool(env_key and not is_dummy_env_key)
+
+    # Managed-proxy marker (set by a wrapper when using a shared key)
+    managed_proxy_flag = os.environ.get('REPLICATE_MANAGED_PROXY') == '1'
+
+    # Application-stored key (set via Settings -> Replicate API Key)
+    has_db_key = False
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Ensure settings table exists (in case context processor runs before API endpoints)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        
+        cursor.execute("SELECT value FROM settings WHERE key = 'replicate_api_key'")
+        row = cursor.fetchone()
+        if row and row[0] and row[0].strip():
+            has_db_key = True
+        conn.close()
+    except Exception:
+        # If settings table is missing or inaccessible, treat as no DB key
+        has_db_key = False
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    # We only consider the key "externally configured" when either:
+    #   - a real env key exists (standalone / direct), or
+    #   - a managed proxy is active (dummy key + management flag),
+    # and there is no DB key overriding it.
+    api_key_configured_externally = (
+        (has_real_env_key or (is_dummy_env_key and managed_proxy_flag))
+        and not has_db_key
+    )
+    
+    return dict(api_key_configured_externally=api_key_configured_externally)
 
 
 def get_memes_url_base_dynamic():
@@ -1784,6 +1845,97 @@ def get_disk_usage():
             
     except Exception as e:
         app.logger.error(f"Error getting disk usage: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/settings/replicate-usage', methods=['GET'])
+@login_required
+def get_replicate_usage():
+    """Get Replicate usage/quota information for this instance."""
+    try:
+        # Check if user has their own key (BYOK) - if so, quotas don't apply
+        has_db_key = False
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM settings WHERE key = 'replicate_api_key'")
+            row = cursor.fetchone()
+            if row and row[0] and row[0].strip():
+                has_db_key = True
+        except Exception:
+            pass
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # If user has their own key, quotas don't apply (they bypass the proxy)
+        if has_db_key:
+            return jsonify({
+                'success': True,
+                'quota_configured': False
+            })
+
+        quota_limit = get_replicate_quota_limit()
+
+        if quota_limit is None:
+            # No managed quota – caller can choose to hide any quota UI
+            return jsonify({
+                'success': True,
+                'quota_configured': False
+            })
+
+        # Fetch current usage dynamically if managed (env var is only set at startup)
+        # If REPLICATE_MANAGED_PROXY is set, fetch from managing service
+        used = None
+        if os.environ.get('REPLICATE_MANAGED_PROXY') == '1':
+            # Try to fetch current usage from managing service
+            # Read config.json to get proxy URL (same pattern as sitecustomize.py uses)
+            try:
+                import requests
+                import json
+                from pathlib import Path
+                
+                # Get instance name from app config (set by wrapper in multi-tenant setup)
+                instance_name = app.config.get('INSTANCE_NAME')
+                if instance_name:
+                    # Read config.json to get proxy URL (generic - just reads a config file)
+                    instance_path = get_instance_path()
+                    config_path = Path(instance_path) / 'config.json'
+                    if config_path.exists():
+                        with open(config_path, 'r') as f:
+                            config = json.load(f)
+                        proxy_url = config.get('memelord_proxy_url')
+                        if proxy_url:
+                            # Derive usage URL from proxy URL (generic pattern)
+                            usage_url = proxy_url.replace('/api/replicate-proxy', f'/api/replicate-usage/{instance_name}')
+                            try:
+                                response = requests.get(usage_url, timeout=5)
+                                if response.status_code == 200:
+                                    usage_data = response.json()
+                                    used = usage_data.get('used', 0)
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+        
+        # Fallback to env var if dynamic fetch didn't work
+        if used is None:
+            used = get_replicate_quota_used() or 0
+
+        remaining = max(0, quota_limit - used)
+        percent_used = min(100, (used / quota_limit) * 100) if quota_limit > 0 else 0
+
+        return jsonify({
+            'success': True,
+            'quota_configured': True,
+            'requests_used': used,
+            'quota_limit': quota_limit,
+            'remaining_requests': remaining,
+            'percent_used': round(percent_used, 1),
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting Replicate usage: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/settings/replicate-api-key', methods=['GET'])

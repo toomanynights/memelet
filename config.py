@@ -122,3 +122,23 @@ def get_disk_quota_mb():
             return None
     return None
 
+def get_replicate_quota_limit():
+    """Get monthly Replicate quota limit (returns None if not set)."""
+    quota = get_config_value('REPLICATE_QUOTA_LIMIT')
+    if quota is not None:
+        try:
+            return int(quota)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+def get_replicate_quota_used():
+    """Get current Replicate usage for the current period (returns None if not set)."""
+    used = get_config_value('REPLICATE_QUOTA_USED')
+    if used is not None:
+        try:
+            return int(used)
+        except (ValueError, TypeError):
+            return None
+    return None
+
