@@ -8,6 +8,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 from uuid import uuid4
 import sqlite3
+import re
 from pathlib import Path
 import os
 import hashlib
@@ -397,18 +398,33 @@ def index():
     
     # Add search filter (search in all text fields, title and file path)
     # Use custom LOWER function for Unicode-aware case-insensitive search
+    # Support:
+    #   - word-based search: all words must appear (in any order)
+    #   - phrase search: anything in "double quotes" must appear as a substring
     if search_query:
-        sql += """ AND (
-            LOWER(m.file_path) LIKE LOWER(?) OR
-            LOWER(m.title) LIKE LOWER(?) OR
-            LOWER(m.ref_content) LIKE LOWER(?) OR
-            LOWER(m.template) LIKE LOWER(?) OR
-            LOWER(m.caption) LIKE LOWER(?) OR
-            LOWER(m.description) LIKE LOWER(?) OR
-            LOWER(m.meaning) LIKE LOWER(?)
-        )"""
-        search_pattern = f"%{search_query}%"
-        params.extend([search_pattern] * 7)
+        # Extract quoted phrases: "exact phrase"
+        phrases = re.findall(r'"([^"]+)"', search_query)
+        # Remove quoted phrases from the string, then split remaining text into words
+        remaining = re.sub(r'"[^"]+"', " ", search_query)
+        words = [w for w in remaining.split() if w]
+
+        # Terms to require, all combined with AND
+        # Each term is (type, text) where type is 'phrase' or 'word'
+        terms = [('phrase', p) for p in phrases] + [('word', w) for w in words]
+
+        if terms:
+            for term_type, text in terms:
+                sql += """ AND (
+                    LOWER(m.file_path) LIKE LOWER(?) OR
+                    LOWER(m.title) LIKE LOWER(?) OR
+                    LOWER(m.ref_content) LIKE LOWER(?) OR
+                    LOWER(m.template) LIKE LOWER(?) OR
+                    LOWER(m.caption) LIKE LOWER(?) OR
+                    LOWER(m.description) LIKE LOWER(?) OR
+                    LOWER(m.meaning) LIKE LOWER(?)
+                )"""
+                pattern = f"%{text}%"
+                params.extend([pattern] * 7)
     
     sql += " ORDER BY m.created_at DESC"
     
@@ -437,19 +453,26 @@ def index():
         count_sql += " AND m.media_type = ?"
         count_params.append(media_filter)
     
-    # Add search filter to count query
+    # Add search filter to count query (must mirror the main query)
     if search_query:
-        count_sql += """ AND (
-            LOWER(m.file_path) LIKE LOWER(?) OR
-            LOWER(m.title) LIKE LOWER(?) OR
-            LOWER(m.ref_content) LIKE LOWER(?) OR
-            LOWER(m.template) LIKE LOWER(?) OR
-            LOWER(m.caption) LIKE LOWER(?) OR
-            LOWER(m.description) LIKE LOWER(?) OR
-            LOWER(m.meaning) LIKE LOWER(?)
-        )"""
-        search_pattern = f"%{search_query}%"
-        count_params.extend([search_pattern] * 7)
+        phrases = re.findall(r'"([^"]+)"', search_query)
+        remaining = re.sub(r'"[^"]+"', " ", search_query)
+        words = [w for w in remaining.split() if w]
+        terms = [('phrase', p) for p in phrases] + [('word', w) for w in words]
+
+        if terms:
+            for term_type, text in terms:
+                count_sql += """ AND (
+                    LOWER(m.file_path) LIKE LOWER(?) OR
+                    LOWER(m.title) LIKE LOWER(?) OR
+                    LOWER(m.ref_content) LIKE LOWER(?) OR
+                    LOWER(m.template) LIKE LOWER(?) OR
+                    LOWER(m.caption) LIKE LOWER(?) OR
+                    LOWER(m.description) LIKE LOWER(?) OR
+                    LOWER(m.meaning) LIKE LOWER(?)
+                )"""
+                pattern = f"%{text}%"
+                count_params.extend([pattern] * 7)
     
     cursor.execute(count_sql, count_params)
     total_memes = cursor.fetchone()[0]
