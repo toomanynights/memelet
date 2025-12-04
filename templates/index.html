@@ -61,6 +61,9 @@
                     {% if media_filter %}
                     <input type="hidden" name="media" value="{{ media_filter }}">
                     {% endif %}
+                    {% if total > 1 %}
+                    <button type="button" class="dice-btn" onclick="goToRandomMeme()" title="I'm feeling lucky - random meme">🎲</button>
+                    {% endif %}
                     {% if search_query or status_filter or tag_filter or media_filter %}
                     <a href="/" class="clear-btn">Clear</a>
                     {% endif %}
@@ -246,7 +249,7 @@
             <a href="/" class="clear-btn" style="display: inline-block;">Clear filters</a>
             {% else %}
             <h2>No memes yet!</h2>
-            <p>Upload some memes (top left button) and they'll appear here</p>
+            <button class="btn btn-secondary" onclick="openUploadModal()" style="margin-top: 20px; font-size: 1.1rem; padding: 15px 40px;">Upload some</button>
             {% endif %}
         </div>
         {% endif %}
@@ -324,7 +327,7 @@
             </div>
 
             <!-- Action Buttons -->
-            <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <div style="display: flex; gap: 10px;">
                 <button class="btn btn-secondary" onclick="closeUploadModal()" id="uploadCancelBtn"
                     style="flex: 1;">Cancel</button>
                 <button class="btn btn-primary" onclick="startUpload()" id="uploadBtn" style="flex: 1;"
@@ -686,6 +689,23 @@
     <script>
         // Get base URL for API calls (for multi-tenant support)
         const BASE_URL = '{{ base_url }}';
+
+        // Random meme functionality
+        function goToRandomMeme() {
+            fetch(`${BASE_URL}/api/random-meme`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = `${BASE_URL}/meme/${data.meme_id}`;
+                    } else {
+                        alert('Error: ' + (data.error || 'Could not get random meme'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching random meme:', error);
+                    alert('Error: Could not get random meme');
+                });
+        }
 
         let initialFullTags = [];
         let initialPartialTags = [];

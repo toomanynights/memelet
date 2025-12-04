@@ -249,13 +249,16 @@ select {
     width: 90%;
     max-height: 80vh;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
 }
 
 .modal-header {
     font-size: 1.5rem;
     font-weight: 600;
-    margin-bottom: 20px;
+    margin-bottom: 15px;
     color: #2d3748;
+    flex-shrink: 0;
 }
 
 .clippy {
@@ -266,12 +269,14 @@ select {
 /* Upload Modal Styles */
 .upload-modal .modal-content {
     max-width: 700px;
+    padding: 20px;
 }
 
 .mode-selector {
     display: flex;
     gap: 15px;
-    margin-bottom: 25px;
+    margin-bottom: 15px;
+    flex-shrink: 0;
 }
 
 .mode-option {
@@ -326,11 +331,12 @@ select {
 .file-upload-area {
     border: 2px dashed #cbd5e0;
     border-radius: 12px;
-    padding: 40px;
+    padding: 20px;
     text-align: center;
-    margin-bottom: 20px;
+    margin-bottom: 15px;
     transition: all 0.3s ease;
     background: #f7fafc;
+    flex-shrink: 0;
 }
 
 .file-upload-area.dragover {
@@ -372,7 +378,9 @@ select {
 }
 
 .selected-files {
-    margin-bottom: 20px;
+    margin-bottom: 15px;
+    flex-shrink: 0;
+    min-height: 0;
 }
 
 .selected-files-title {
@@ -436,8 +444,9 @@ select {
 }
 
 .upload-progress {
-    margin-top: 20px;
+    margin-top: 15px;
     display: none;
+    flex-shrink: 0;
 }
 
 .upload-progress.active {
@@ -481,4 +490,11 @@ select {
 
 .upload-status.error {
     color: #742a2a;
+}
+
+/* Action buttons container in upload modal */
+.upload-modal .modal-content > div:last-child {
+    flex-shrink: 0;
+    margin-top: auto;
+    padding-top: 15px;
 }

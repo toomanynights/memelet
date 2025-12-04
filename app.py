@@ -1594,6 +1594,22 @@ def get_meme(meme_id: int):
     resp.headers['Pragma'] = 'no-cache'
     return resp
 
+@app.route('/api/random-meme', methods=['GET'])
+@login_required_unless_public
+def get_random_meme():
+    """Get a random meme ID"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM memes ORDER BY RANDOM() LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return jsonify({'success': False, 'error': 'No memes found'}), 404
+    
+    meme_id = row['id'] if isinstance(row, sqlite3.Row) else row[0]
+    return jsonify({'success': True, 'meme_id': meme_id})
+
 @app.route('/tags')
 @login_required
 def tags():

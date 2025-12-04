@@ -146,6 +146,32 @@ h1 {
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 
+.dice-btn {
+    padding: 12px 12px;
+    border: none;
+    border-radius: 25px;
+    background: rgba(255,255,255,0.95);
+    color: #2d3748;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 50px;
+}
+
+.dice-btn:hover {
+    background: rgba(255,255,255,1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    transform: rotate(90deg) scale(1.1);
+}
+
+.dice-btn:active {
+    transform: rotate(180deg) scale(0.95);
+}
+
 .clear-btn {
     padding: 12px 24px;
     border: none;
