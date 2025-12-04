@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Memelet - Your Meme Collection</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
     <style>
@@ -61,7 +62,7 @@
                     {% if media_filter %}
                     <input type="hidden" name="media" value="{{ media_filter }}">
                     {% endif %}
-                    {% if total > 1 %}
+                    {% if total > 1 and not (search_query or status_filter or tag_filter or media_filter) %}
                     <button type="button" class="dice-btn" onclick="goToRandomMeme()" title="I'm feeling lucky - random meme">🎲</button>
                     {% endif %}
                     {% if search_query or status_filter or tag_filter or media_filter %}
