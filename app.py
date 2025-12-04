@@ -2,7 +2,7 @@
 """
 Memelet Web Interface
 """
-from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for, flash, session
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
@@ -43,6 +43,13 @@ login_manager.session_protection = 'strong'
 
 # Set session lifetime to 2 weeks
 app.permanent_session_lifetime = timedelta(days=14)
+
+# Configure session cookies for mobile browser compatibility
+# Mobile browsers (especially Safari on iOS) require explicit cookie attributes
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access (security)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection while allowing cross-site navigation
+# SESSION_COOKIE_SECURE will be set dynamically based on request context
+# This allows it to work in both HTTP (dev) and HTTPS (prod) environments
 
 # Automatic hourly scanning scheduler (only in standalone mode, not multi-tenant)
 # Check if we're running in multi-tenant mode by checking for INSTANCE_NAME in config
@@ -226,6 +233,16 @@ def set_instance_paths_and_url_root():
         request.environ['SCRIPT_NAME'] = f'/for/{instance_name}'
         app.config['APPLICATION_ROOT'] = f'/for/{instance_name}' # Re-added this for Flask-Login
 
+    # Dynamically set SESSION_COOKIE_SECURE based on request context
+    # Check if request is secure (either directly or via proxy header)
+    # This allows cookies to work in both HTTP (dev) and HTTPS (prod) environments
+    is_secure = (
+        request.is_secure or 
+        request.headers.get('X-Forwarded-Proto', '').lower() == 'https' or
+        os.environ.get('HTTPS', '').lower() == 'true'
+    )
+    app.config['SESSION_COOKIE_SECURE'] = is_secure
+
     # Log authentication state for debugging
     if current_user.is_authenticated:
         app.logger.info(f"Auth state: authenticated=True, user_id={current_user.id}")
@@ -270,6 +287,10 @@ def login():
         if row and check_password_hash(row['password_hash'], password):
             user = User(row['id'], row['username'])
             login_user(user, remember=True)  # Remember for 2 weeks
+            
+            # Explicitly mark session as permanent for mobile browser compatibility
+            # This ensures the session cookie has the correct expiration
+            session.permanent = True
             
             next_page = request.args.get('next')
             if next_page and next_page.startswith('/'):
