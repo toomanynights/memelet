@@ -2296,28 +2296,75 @@ def upload_files():
             
             conn.commit()
             meme_ids.append(album_id)
-            
-            # Trigger processing for the album
+
+            # Trigger processing for the album (single-instance first, multi-tenant aware via HELPER_SCRIPTS_DIR)
             try:
-                script_dir = os.path.dirname(os.path.abspath(__file__))
+                instance_dir = get_script_dir()  # Instance directory
+                venv_dir = get_venv_dir()
+
+                # Resolve process_memes.py location using helper scripts dir when provided
+                script_dir = app.config.get('HELPER_SCRIPTS_DIR', instance_dir)
                 process_script = os.path.join(script_dir, 'process_memes.py')
-                log_file = os.path.join(script_dir, 'logs', 'scan.log')
+
+                log_file = os.path.join(get_log_dir(), 'scan.log')
                 os.makedirs(os.path.dirname(log_file), exist_ok=True)
-                
+
+                # Environment for processing script
+                env = os.environ.copy()
+                env['SCRIPT_DIR'] = instance_dir  # Instance directory (for files, logs, etc.)
+                env['LOG_DIR'] = get_log_dir()
+                env['DB_PATH'] = get_db_path()
+                env['MEMES_DIR'] = get_memes_dir()
+                env['MEMES_URL_BASE'] = get_memes_url_base()  # Critical for Replicate API image URLs
+                env['VENV_DIR'] = venv_dir
+
+                working_dir = script_dir
+
                 with open(log_file, 'a', encoding='utf-8') as lf:
                     lf.write("================================\n")
                     lf.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Processing uploaded album (id={album_id})\n")
+                    lf.write(f"Process script: {process_script}\n")
+                    lf.write(f"Working dir: {working_dir}\n")
                     lf.write("================================\n")
-                    
-                    subprocess.Popen(
-                        ['python3', process_script, '--process-one', str(album_id)],
-                        cwd=script_dir,
+
+                    python_exec = os.path.join(venv_dir, "bin", "python") if os.path.exists(os.path.join(venv_dir, "bin", "python")) else "python3"
+
+                    proc = subprocess.Popen(
+                        [python_exec, process_script, '--process-one', str(album_id)],
+                        cwd=working_dir,
+                        env=env,
                         stdout=lf,
                         stderr=lf,
                         start_new_session=True
                     )
+
+                    # Best-effort background monitor to flip album to error if the process fails fast
+                    def monitor_processing():
+                        import subprocess as _subprocess
+                        try:
+                            exit_code = proc.wait(timeout=60)
+                            if exit_code != 0:
+                                conn_mon = get_db_connection()
+                                cur_mon = conn_mon.cursor()
+                                cur_mon.execute(
+                                    "UPDATE memes SET status='error', error_message=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                                    (f"Processing failed with exit code {exit_code}", album_id)
+                                )
+                                conn_mon.commit()
+                                conn_mon.close()
+                                lf.write(f"Updated album {album_id} status to error (exit code: {exit_code})\n")
+                        except _subprocess.TimeoutExpired:
+                            # Normal for long-running jobs
+                            pass
+                        except Exception as monitor_error:
+                            lf.write(f"Error monitoring process for album {album_id}: {monitor_error}\n")
+
+                    import threading as _threading
+                    monitor_thread = _threading.Thread(target=monitor_processing, daemon=True)
+                    monitor_thread.start()
+
             except Exception as e:
-                print(f"Warning: Could not trigger processing: {e}")
+                print(f"Warning: Could not trigger processing for album {album_id}: {e}")
         
         else:  # single mode
             # Save each file individually
@@ -2373,17 +2420,9 @@ def upload_files():
                     instance_dir = get_script_dir()  # Instance directory
                     venv_dir = get_venv_dir()
                     
-                    # Process script is in the shared branch directory, not instance directory
-                    # For multi-tenant: /var/memelet-instances/branches/main/shared/process_memes.py
-                    # For standalone: same directory as this script
-                    if 'INSTANCE_NAME' in app.config:
-                        # Multi-tenant mode: script is in shared branch directory
-                        branch = 'main'  # TODO: Get from config if needed
-                        branch_shared_dir = Path(instance_dir).parent.parent / 'branches' / branch / 'shared'
-                        process_script = str(branch_shared_dir / 'process_memes.py')
-                    else:
-                        # Standalone mode: script is in same directory
-                        process_script = os.path.join(instance_dir, 'process_memes.py')
+                    # Resolve process_memes.py location using helper scripts dir when provided
+                    script_dir = app.config.get('HELPER_SCRIPTS_DIR', instance_dir)
+                    process_script = os.path.join(script_dir, 'process_memes.py')
                     
                     log_file = os.path.join(get_log_dir(), 'scan.log')
                     os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -2398,7 +2437,7 @@ def upload_files():
                     env['VENV_DIR'] = venv_dir
                     
                     # Working directory should be where the process script is located
-                    working_dir = os.path.dirname(process_script)
+                    working_dir = script_dir
                     
                     with open(log_file, 'a', encoding='utf-8') as lf:
                         lf.write("================================\n")
