@@ -130,6 +130,7 @@ def parse_tags_from_filename(file_path):
     conn.close()
     
     if not parseable_tags:
+        print(f"  ℹ️ No parseable tags in database; skipping tag parsing")
         return []
     
     # Get filename/directory name and folder path
@@ -272,6 +273,20 @@ def ai_suggest_and_apply_tags_from_text(meme_id: int):
 
     Returns a tuple (applied_tag_names, unknown_names) for logging purposes.
     """
+    # Check if there are any AI-suggestable tags in the database
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT COUNT(*) FROM tags 
+        WHERE ai_can_suggest = 1
+    """)
+    count = cursor.fetchone()[0]
+    conn.close()
+    
+    if count == 0:
+        print(f"  ℹ️ No AI-suggestable tags in database; skipping AI tag suggestion")
+        return [], []
+    
     text_blob = _get_meme_text_blob(meme_id)
     if not text_blob:
         print(f"  ⚠️ No text content available for meme id={meme_id}; skipping AI tag suggestion")
@@ -326,6 +341,17 @@ def scan_tags_for_memes(meme_ids=None, run_path_parse=True, run_ai_text=True, jo
     If meme_ids is None, operates on all memes.
     This function does NOT modify meme status or other descriptive fields.
     """
+    # Check if there are any tags in the database at all
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM tags")
+    tag_count = cursor.fetchone()[0]
+    conn.close()
+    
+    if tag_count == 0:
+        print("ℹ️ No tags in database; cannot proceed with tag scanning")
+        return
+
     conn = get_db_connection()
     cur = conn.cursor()
     if meme_ids is None:
@@ -356,8 +382,7 @@ def scan_tags_for_memes(meme_ids=None, run_path_parse=True, run_ai_text=True, jo
                     if actually_applied > 0:
                         print(f"  ✓ Path tags applied: {actually_applied}")
                         applied_any = True
-                else:
-                    print("  ℹ️ No path-derived tags")
+
             except Exception as e:
                 print(f"  ✗ Path tag parse failed: {e}")
         if run_ai_text:
