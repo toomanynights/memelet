@@ -294,6 +294,10 @@ def login():
             
             next_page = request.args.get('next')
             if next_page and next_page.startswith('/'):
+                # In multi-tenant mode, prepend SCRIPT_NAME to the redirect path
+                script_name = request.environ.get('SCRIPT_NAME', '')
+                if script_name and not next_page.startswith(script_name):
+                    next_page = script_name + next_page
                 return redirect(next_page)
             return redirect(url_for('index'))
         else:

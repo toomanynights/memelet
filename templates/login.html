@@ -185,7 +185,7 @@
             {% endif %}
         {% endwith %}
 
-        <form method="POST" action="{{ url_for('login') }}">
+        <form method="POST" action="{{ url_for('login', next=request.args.get('next')) }}">
             <div class="form-group">
                 <label for="username">Username</label>
                 <input 
