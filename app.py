@@ -2500,12 +2500,19 @@ def upload_files():
                                     )
                                     conn.commit()
                                     conn.close()
-                                    lf.write(f"Updated meme {meme_id} status to error (exit code: {exit_code})\n")
+                                    
+                                    # Re-open log file for writing error
+                                    with open(log_file, 'a', encoding='utf-8') as thread_lf:
+                                        thread_lf.write(f"Updated meme {meme_id} status to error (exit code: {exit_code})\n")
                             except subprocess.TimeoutExpired:
                                 # Process is still running after 60 seconds, that's normal for processing
                                 pass
                             except Exception as monitor_error:
-                                lf.write(f"Error monitoring process for meme {meme_id}: {monitor_error}\n")
+                                try:
+                                    with open(log_file, 'a', encoding='utf-8') as thread_lf:
+                                        thread_lf.write(f"Error monitoring process for meme {meme_id}: {monitor_error}\n")
+                                except:
+                                    pass
                         
                         # Start monitoring in a separate thread
                         import threading
