@@ -34,6 +34,7 @@ import atexit
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 app.config['TEMPLATES_AUTO_RELOAD'] = True  # Enable template auto-reload
+app.config['MAX_CONTENT_LENGTH'] = 150 * 1024 * 1024  # 150MB max request size (allows headroom for metadata)
 
 # Flask-Login setup
 login_manager = LoginManager()
@@ -222,6 +223,21 @@ IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
 GIF_EXTENSIONS = {'.gif'}
 VIDEO_EXTENSIONS = {'.mp4', '.webm', '.mov', '.avi'}
 ALL_MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | GIF_EXTENSIONS | VIDEO_EXTENSIONS
+
+# File size limits (in MB)
+MAX_IMAGE_SIZE_MB = 10
+MAX_GIF_SIZE_MB = 20
+MAX_VIDEO_SIZE_MB = 100
+
+# Text field length limits
+MAX_TAG_NAME_LENGTH = 25
+MAX_TAG_DESCRIPTION_LENGTH = 500
+MAX_ALBUM_TITLE_LENGTH = 50
+MAX_MEME_CAPTION_LENGTH = 1000
+MAX_MEME_DESCRIPTION_LENGTH = 2000
+MAX_MEME_MEANING_LENGTH = 2000
+MAX_MEME_TEMPLATE_LENGTH = 200
+MAX_MEME_REF_CONTENT_LENGTH = 1000
 
 @app.before_request
 def set_instance_paths_and_url_root():
@@ -666,6 +682,26 @@ def meme_detail(meme_id):
         caption = request.form.get('caption', '').strip()
         description = request.form.get('description', '').strip()
         meaning = request.form.get('meaning', '').strip()
+        
+        # Validate text field lengths (user-submitted only, AI can exceed)
+        errors = []
+        if len(title) > MAX_ALBUM_TITLE_LENGTH:
+            errors.append(f'Album title too long (max {MAX_ALBUM_TITLE_LENGTH} characters)')
+        if len(caption) > MAX_MEME_CAPTION_LENGTH:
+            errors.append(f'Caption too long (max {MAX_MEME_CAPTION_LENGTH} characters)')
+        if len(description) > MAX_MEME_DESCRIPTION_LENGTH:
+            errors.append(f'Description too long (max {MAX_MEME_DESCRIPTION_LENGTH} characters)')
+        if len(meaning) > MAX_MEME_MEANING_LENGTH:
+            errors.append(f'Meaning too long (max {MAX_MEME_MEANING_LENGTH} characters)')
+        if len(template) > MAX_MEME_TEMPLATE_LENGTH:
+            errors.append(f'Template too long (max {MAX_MEME_TEMPLATE_LENGTH} characters)')
+        if len(ref_content) > MAX_MEME_REF_CONTENT_LENGTH:
+            errors.append(f'References too long (max {MAX_MEME_REF_CONTENT_LENGTH} characters)')
+        
+        if errors:
+            conn.close()
+            flash('; '.join(errors), 'error')
+            return redirect(url_for('meme_detail', meme_id=meme_id))
         
         cursor.execute("""
             UPDATE memes 
@@ -1699,6 +1735,19 @@ def create_tag():
     """Create a new tag"""
     data = request.get_json()
     
+    # Validate tag name and description lengths
+    tag_name = data.get('name', '').strip()
+    tag_description = data.get('description', '').strip()
+    
+    if not tag_name:
+        return {'success': False, 'error': 'Tag name is required'}
+    
+    if len(tag_name) > MAX_TAG_NAME_LENGTH:
+        return {'success': False, 'error': f'Tag name too long (max {MAX_TAG_NAME_LENGTH} characters)'}
+    
+    if len(tag_description) > MAX_TAG_DESCRIPTION_LENGTH:
+        return {'success': False, 'error': f'Tag description too long (max {MAX_TAG_DESCRIPTION_LENGTH} characters)'}
+    
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -1707,8 +1756,8 @@ def create_tag():
             INSERT INTO tags (name, description, color, parse_from_filename, ai_can_suggest)
             VALUES (?, ?, ?, ?, ?)
         """, (
-            data['name'],
-            data.get('description', ''),
+            tag_name,
+            tag_description,
             data['color'],
             1 if data.get('parse_from_filename', True) else 0,
             1 if data.get('ai_can_suggest', True) else 0
@@ -1727,6 +1776,19 @@ def update_tag(tag_id):
     """Update a tag"""
     data = request.get_json()
     
+    # Validate tag name and description lengths
+    tag_name = data.get('name', '').strip()
+    tag_description = data.get('description', '').strip()
+    
+    if not tag_name:
+        return {'success': False, 'error': 'Tag name is required'}
+    
+    if len(tag_name) > MAX_TAG_NAME_LENGTH:
+        return {'success': False, 'error': f'Tag name too long (max {MAX_TAG_NAME_LENGTH} characters)'}
+    
+    if len(tag_description) > MAX_TAG_DESCRIPTION_LENGTH:
+        return {'success': False, 'error': f'Tag description too long (max {MAX_TAG_DESCRIPTION_LENGTH} characters)'}
+    
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -1736,8 +1798,8 @@ def update_tag(tag_id):
             parse_from_filename = ?, ai_can_suggest = ?
         WHERE id = ?
     """, (
-        data['name'],
-        data.get('description', ''),
+        tag_name,
+        tag_description,
         data['color'],
         1 if data.get('parse_from_filename', True) else 0,
         1 if data.get('ai_can_suggest', True) else 0,
@@ -2254,7 +2316,7 @@ def upload_files():
             app.logger.error(f"Error checking disk space: {e}")
             # Don't block upload if space check fails
         
-        # Validate file types
+        # Validate file types and sizes
         for file in files:
             if not file.filename:
                 continue
@@ -2275,6 +2337,28 @@ def upload_files():
                         'success': False,
                         'error': f'Invalid file type: {file.filename}'
                     }), 400
+            
+            # Validate file size
+            file.seek(0, 2)  # Seek to end of file
+            file_size_bytes = file.tell()
+            file.seek(0)  # Reset to beginning
+            file_size_mb = file_size_bytes / (1024 * 1024)
+            
+            if ext in VIDEO_EXTENSIONS:
+                max_size_mb = MAX_VIDEO_SIZE_MB
+                file_type_name = "video"
+            elif ext in GIF_EXTENSIONS:
+                max_size_mb = MAX_GIF_SIZE_MB
+                file_type_name = "GIF"
+            else:  # IMAGE_EXTENSIONS
+                max_size_mb = MAX_IMAGE_SIZE_MB
+                file_type_name = "image"
+            
+            if file_size_mb > max_size_mb:
+                return jsonify({
+                    'success': False,
+                    'error': f'{file.filename}: {file_type_name} file too large ({file_size_mb:.1f}MB). Maximum size is {max_size_mb}MB.'
+                }), 400
         
         conn = get_db_connection()
         cursor = conn.cursor()

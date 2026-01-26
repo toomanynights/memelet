@@ -385,6 +385,7 @@
         // Upload Modal State
         let uploadMode = 'single';
         let selectedFiles = [];
+        let currentUploadXHR = null;
 
         function openUploadModal() {
             document.getElementById('uploadModal').classList.add('active');
@@ -398,10 +399,23 @@
         }
 
         function closeUploadModal() {
+            // Abort upload if in progress
+            if (currentUploadXHR) {
+                currentUploadXHR.abort();
+                currentUploadXHR = null;
+            }
+            
             document.getElementById('uploadModal').classList.remove('active');
             selectedFiles = [];
             document.getElementById('fileInput').value = '';
             updateFileList();
+            
+            // Reset UI state
+            document.getElementById('uploadProgress').classList.remove('active');
+            document.getElementById('uploadBtn').disabled = true;
+            document.getElementById('uploadCancelBtn').disabled = false;
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressBar').textContent = '0%';
         }
 
         function selectUploadMode(mode) {
@@ -432,19 +446,63 @@
         function handleFileSelect(event) {
             const files = Array.from(event.target.files);
 
-            // Validate file types based on mode
-            const validFiles = files.filter(file => {
+            // File size limits (in MB) - must match server-side validation
+            const MAX_IMAGE_SIZE_MB = 10;
+            const MAX_GIF_SIZE_MB = 20;
+            const MAX_VIDEO_SIZE_MB = 100;
+
+            const validFiles = [];
+            const rejectedFiles = [];
+
+            files.forEach(file => {
+                let isValidType = false;
+                let isValidSize = false;
+                let maxSizeMB = 0;
+                let fileTypeName = '';
+
+                // Validate file type based on mode
                 if (uploadMode === 'album') {
                     // Only images for albums
-                    return file.type.match(/^image\/(jpeg|jpg|png|webp|bmp)$/);
+                    isValidType = file.type.match(/^image\/(jpeg|jpg|png|webp|bmp)$/);
+                    maxSizeMB = MAX_IMAGE_SIZE_MB;
+                    fileTypeName = 'image';
                 } else {
                     // Images, GIFs, and videos for single mode
-                    return file.type.match(/^image\//) || file.type.match(/^video\//);
+                    if (file.type === 'image/gif') {
+                        isValidType = true;
+                        maxSizeMB = MAX_GIF_SIZE_MB;
+                        fileTypeName = 'GIF';
+                    } else if (file.type.match(/^video\//)) {
+                        isValidType = true;
+                        maxSizeMB = MAX_VIDEO_SIZE_MB;
+                        fileTypeName = 'video';
+                    } else if (file.type.match(/^image\//)) {
+                        isValidType = true;
+                        maxSizeMB = MAX_IMAGE_SIZE_MB;
+                        fileTypeName = 'image';
+                    }
                 }
+
+                if (!isValidType) {
+                    rejectedFiles.push(`${file.name}: Invalid file type`);
+                    return;
+                }
+
+                // Validate file size
+                const fileSizeMB = file.size / (1024 * 1024);
+                isValidSize = fileSizeMB <= maxSizeMB;
+
+                if (!isValidSize) {
+                    rejectedFiles.push(`${file.name}: Too large (${fileSizeMB.toFixed(1)}MB, max ${maxSizeMB}MB for ${fileTypeName})`);
+                    return;
+                }
+
+                validFiles.push(file);
             });
 
-            if (validFiles.length !== files.length) {
-                alert(`${files.length - validFiles.length} file(s) were rejected due to invalid file type for selected mode.`);
+            if (rejectedFiles.length > 0) {
+                const message = `${rejectedFiles.length} file(s) were rejected:\n\n${rejectedFiles.join('\n')}`;
+                alert(message);
             }
 
             selectedFiles = validFiles;
@@ -526,17 +584,63 @@
 
             const files = Array.from(e.dataTransfer.files);
 
-            // Validate file types based on mode
-            const validFiles = files.filter(file => {
+            // File size limits (in MB) - must match server-side validation
+            const MAX_IMAGE_SIZE_MB = 10;
+            const MAX_GIF_SIZE_MB = 20;
+            const MAX_VIDEO_SIZE_MB = 100;
+
+            const validFiles = [];
+            const rejectedFiles = [];
+
+            files.forEach(file => {
+                let isValidType = false;
+                let isValidSize = false;
+                let maxSizeMB = 0;
+                let fileTypeName = '';
+
+                // Validate file type based on mode
                 if (uploadMode === 'album') {
-                    return file.type.match(/^image\/(jpeg|jpg|png|webp|bmp)$/);
+                    // Only images for albums
+                    isValidType = file.type.match(/^image\/(jpeg|jpg|png|webp|bmp)$/);
+                    maxSizeMB = MAX_IMAGE_SIZE_MB;
+                    fileTypeName = 'image';
                 } else {
-                    return file.type.match(/^image\//) || file.type.match(/^video\//);
+                    // Images, GIFs, and videos for single mode
+                    if (file.type === 'image/gif') {
+                        isValidType = true;
+                        maxSizeMB = MAX_GIF_SIZE_MB;
+                        fileTypeName = 'GIF';
+                    } else if (file.type.match(/^video\//)) {
+                        isValidType = true;
+                        maxSizeMB = MAX_VIDEO_SIZE_MB;
+                        fileTypeName = 'video';
+                    } else if (file.type.match(/^image\//)) {
+                        isValidType = true;
+                        maxSizeMB = MAX_IMAGE_SIZE_MB;
+                        fileTypeName = 'image';
+                    }
                 }
+
+                if (!isValidType) {
+                    rejectedFiles.push(`${file.name}: Invalid file type`);
+                    return;
+                }
+
+                // Validate file size
+                const fileSizeMB = file.size / (1024 * 1024);
+                isValidSize = fileSizeMB <= maxSizeMB;
+
+                if (!isValidSize) {
+                    rejectedFiles.push(`${file.name}: Too large (${fileSizeMB.toFixed(1)}MB, max ${maxSizeMB}MB for ${fileTypeName})`);
+                    return;
+                }
+
+                validFiles.push(file);
             });
 
-            if (validFiles.length !== files.length) {
-                alert(`${files.length - validFiles.length} file(s) were rejected due to invalid file type for selected mode.`);
+            if (rejectedFiles.length > 0) {
+                const message = `${rejectedFiles.length} file(s) were rejected:\n\n${rejectedFiles.join('\n')}`;
+                alert(message);
             }
 
             selectedFiles = validFiles;
@@ -552,7 +656,8 @@
             // Show progress
             document.getElementById('uploadProgress').classList.add('active');
             document.getElementById('uploadBtn').disabled = true;
-            document.getElementById('uploadCancelBtn').disabled = true;
+            // Keep cancel button enabled so user can abort upload
+            document.getElementById('uploadCancelBtn').disabled = false;
 
             // Create FormData
             const formData = new FormData();
@@ -564,6 +669,7 @@
 
             // Upload with progress tracking
             const xhr = new XMLHttpRequest();
+            currentUploadXHR = xhr;
 
             xhr.upload.addEventListener('progress', (e) => {
                 if (e.lengthComputable) {
@@ -574,6 +680,7 @@
             });
 
             xhr.addEventListener('load', () => {
+                currentUploadXHR = null;
                 if (xhr.status === 200) {
                     const response = JSON.parse(xhr.responseText);
                     if (response.success) {
@@ -612,7 +719,13 @@
             });
 
             xhr.addEventListener('error', () => {
+                currentUploadXHR = null;
                 handleUploadError('Network error during upload');
+            });
+
+            xhr.addEventListener('abort', () => {
+                currentUploadXHR = null;
+                handleUploadError('Upload cancelled by user');
             });
 
             xhr.open('POST', `${BASE_URL}/api/upload`, true);
