@@ -86,6 +86,26 @@
 
         <div class="section">
             <h2>🔑 Replicate API Key</h2>
+            
+            <!-- AI Functions Toggle -->
+            <div style="margin-bottom: 20px; padding: 15px; background: #f7fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                    <div style="flex: 1;">
+                        <strong style="font-size: 1.05rem;">🤖 AI Functions</strong>
+                        <p style="margin: 5px 0 0 0; font-size: 0.9rem; color: #718096;">
+                            Enable AI-powered description generation and tag suggestions
+                        </p>
+                    </div>
+                    <label class="toggle-switch" style="margin-left: 20px;">
+                        <input type="checkbox" id="ai-enabled-toggle" onchange="toggleAiFunctions()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div id="ai-status-message" style="margin-top: 10px; font-size: 0.85rem;"></div>
+            </div>
+
+            <!-- API Key Configuration Block -->
+            <div id="api-key-config-block">
             {% if api_key_configured_externally %}
             <p class="action-description">
                 <strong>✅ API Key Configured via Environment:</strong> An API key is provided by the environment. No
@@ -141,6 +161,8 @@
                 key, clear the field and enter a new one.
             </p>
             {% endif %}
+            </div>
+            <!-- End API Key Configuration Block -->
         </div>
 
         <div class="section">
@@ -479,6 +501,80 @@
                     showHideBtn.style.display = 'none';
                 }
             });
+        });
+    </script>
+
+    <!-- AI Functions Toggle Script -->
+    <script>
+        let aiEnabled = true;
+
+        // Load AI enabled status on page load
+        function loadAiStatus() {
+            fetch(`${BASE_URL}/api/settings/ai-enabled`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        aiEnabled = data.ai_enabled;
+                        const toggle = document.getElementById('ai-enabled-toggle');
+                        const configBlock = document.getElementById('api-key-config-block');
+                        const statusMsg = document.getElementById('ai-status-message');
+                        
+                        toggle.checked = aiEnabled;
+                        
+                        if (aiEnabled) {
+                            configBlock.style.display = 'block';
+                            statusMsg.innerHTML = '<span style="color: #10b981;">✅ AI functions are enabled</span>';
+                        } else {
+                            configBlock.style.display = 'none';
+                            statusMsg.innerHTML = '<span style="color: #718096;">ℹ️ AI functions are disabled. Description generation and tag suggestions will not run.</span>';
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading AI status:', error);
+                });
+        }
+
+        function toggleAiFunctions() {
+            const toggle = document.getElementById('ai-enabled-toggle');
+            const newStatus = toggle.checked;
+            
+            fetch(`${BASE_URL}/api/settings/ai-enabled`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ai_enabled: newStatus })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        aiEnabled = newStatus;
+                        const configBlock = document.getElementById('api-key-config-block');
+                        const statusMsg = document.getElementById('ai-status-message');
+                        
+                        if (aiEnabled) {
+                            configBlock.style.display = 'block';
+                            statusMsg.innerHTML = '<span style="color: #10b981;">✅ AI functions are enabled</span>';
+                        } else {
+                            configBlock.style.display = 'none';
+                            statusMsg.innerHTML = '<span style="color: #718096;">ℹ️ AI functions are disabled. Description generation and tag suggestions will not run.</span>';
+                        }
+                    } else {
+                        // Revert toggle on error
+                        toggle.checked = aiEnabled;
+                        alert('Error updating AI status: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error toggling AI status:', error);
+                    // Revert toggle on error
+                    toggle.checked = aiEnabled;
+                    alert('Error updating AI status');
+                });
+        }
+
+        // Load AI status when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAiStatus();
         });
     </script>
 

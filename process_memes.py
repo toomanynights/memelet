@@ -114,6 +114,25 @@ def setup_replicate_api():
         # Try to use existing environment variable as fallback
         return "REPLICATE_API_TOKEN" in os.environ
 
+def is_ai_enabled():
+    """Check if AI functions are enabled (default is True)"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT value FROM settings WHERE key = 'ai_enabled'")
+        row = cursor.fetchone()
+        if row and row[0]:
+            # Convert string to boolean
+            return row[0].lower() in ('true', '1', 'yes')
+    except Exception:
+        # If any error occurs, default to enabled
+        pass
+    finally:
+        conn.close()
+    
+    # Default to True (enabled) if not set
+    return True
+
 def parse_tags_from_filename(file_path):
     """Parse tags from filename and folder path based on tags that have parse_from_filename enabled.
     Returns list of tag IDs that match the filename or folder path.
@@ -273,6 +292,11 @@ def ai_suggest_and_apply_tags_from_text(meme_id: int):
 
     Returns a tuple (applied_tag_names, unknown_names) for logging purposes.
     """
+    # Check if AI functions are enabled
+    if not is_ai_enabled():
+        print(f"  ℹ️ AI functions are disabled; skipping AI tag suggestion")
+        return [], []
+    
     # Check if there are any AI-suggestable tags in the database
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1042,6 +1066,11 @@ def extract_video_frames(video_path, fps=2, max_frames=20):
 
 def analyze_meme(file_path, media_type, album_items=None):
     """Send meme to Replicate for analysis"""
+    # Check if AI functions are enabled
+    if not is_ai_enabled():
+        print("  ℹ️ AI functions are disabled; skipping meme analysis")
+        return None
+    
     # Get relative path from MEMES_DIR to build proper URL
     file_path_obj = Path(file_path)
     memes_dir_obj = Path(MEMES_DIR)
@@ -1189,6 +1218,21 @@ def process_meme(meme_id, file_path, media_type):
         
         # Get analysis from Replicate
         result = analyze_meme(file_path, media_type, album_items=album_items)
+        
+        # Check if AI is disabled (analyze_meme returns None)
+        if result is None:
+            print("  ℹ️ AI disabled - marking as 'done' without AI-generated fields")
+            cursor.execute("""
+                UPDATE memes 
+                SET status = 'done',
+                    error_message = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (meme_id,))
+            conn.commit()
+            conn.close()
+            print(f"✅ Marked as done (AI disabled)\n")
+            return
         
         # Convert list to string (if needed)
         if isinstance(result, list):

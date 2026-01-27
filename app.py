@@ -2126,6 +2126,62 @@ def set_replicate_api_key_setting():
     
     return jsonify({'success': True, 'message': 'API key saved successfully'})
 
+@app.route('/api/settings/ai-enabled', methods=['GET'])
+@login_required
+def get_ai_enabled_setting():
+    """Get AI enabled status"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Ensure settings table exists
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    
+    # Get AI enabled setting (default is enabled/true)
+    cursor.execute("SELECT value FROM settings WHERE key = 'ai_enabled'")
+    result = cursor.fetchone()
+    conn.close()
+    
+    # Default to True (enabled) if not set
+    ai_enabled = True
+    if result and result[0]:
+        ai_enabled = result[0].lower() in ('true', '1', 'yes')
+    
+    return jsonify({'success': True, 'ai_enabled': ai_enabled})
+
+@app.route('/api/settings/ai-enabled', methods=['POST'])
+@login_required
+def set_ai_enabled_setting():
+    """Save AI enabled status"""
+    data = request.get_json()
+    ai_enabled = data.get('ai_enabled', True)
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Ensure settings table exists
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    
+    # Store as string ('true' or 'false')
+    cursor.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('ai_enabled', ?)",
+        (str(ai_enabled).lower(),)
+    )
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'AI enabled status updated', 'ai_enabled': ai_enabled})
+
 @app.route('/api/settings/change-password', methods=['POST'])
 @login_required
 def change_password():
