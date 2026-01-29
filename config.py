@@ -132,6 +132,7 @@ def get_replicate_quota_limit():
             return None
     return None
 
+
 def get_replicate_quota_used():
     """Get current Replicate usage for the current period (returns None if not set)."""
     used = get_config_value('REPLICATE_QUOTA_USED')
