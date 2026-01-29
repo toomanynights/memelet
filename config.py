@@ -130,7 +130,9 @@ def get_replicate_quota_limit():
             return int(quota)
         except (ValueError, TypeError):
             return None
-    return Nonedef get_replicate_quota_used():
+    return None
+
+def get_replicate_quota_used():
     """Get current Replicate usage for the current period (returns None if not set)."""
     used = get_config_value('REPLICATE_QUOTA_USED')
     if used is not None:
