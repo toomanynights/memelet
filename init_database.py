@@ -122,23 +122,6 @@ def init_database():
     if cursor.fetchone() is None:
         cursor.execute("INSERT INTO settings (key, value) VALUES ('privacy_mode', 'private')")
     
-    # Initialize version management settings
-    cursor.execute("SELECT value FROM settings WHERE key = 'current_branch'")
-    if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO settings (key, value) VALUES ('current_branch', 'main')")
-    
-    cursor.execute("SELECT value FROM settings WHERE key = 'current_version'")
-    if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO settings (key, value) VALUES ('current_version', 'v1.0')")
-    
-    cursor.execute("SELECT value FROM settings WHERE key = 'available_version'")
-    if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO settings (key, value) VALUES ('available_version', 'v1.0')")
-    
-    cursor.execute("SELECT value FROM settings WHERE key = 'release_notes'")
-    if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO settings (key, value) VALUES ('release_notes', '')")
-    
     # Users table for authentication
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
