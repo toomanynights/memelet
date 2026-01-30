@@ -22,6 +22,57 @@
             <h1>⚙️ Settings</h1>
         </div>
 
+        <!-- Branch Selector -->
+        <div class="section">
+            <h2>Update Channel</h2>
+            {% if can_switch_branch %}
+            <p style="margin-bottom: 10px; color: #718096;">Choose your update channel:</p>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <select id="branch-selector" onchange="switchBranch(this.value)" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e0; font-size: 1rem;">
+                    <option value="main" {% if current_branch == 'main' %}selected{% endif %}>Stable (main)</option>
+                    <option value="beta" {% if current_branch == 'beta' %}selected{% endif %}>Beta Testing</option>
+                    <option value="dev" {% if current_branch == 'dev' %}selected{% endif %}>Development</option>
+                </select>
+                <span style="color: #718096; font-size: 0.9rem;">Current: <strong>{{ current_branch }}</strong></span>
+            </div>
+            <p style="margin-top: 10px; font-size: 0.9rem; color: #718096;">
+                <strong>Stable:</strong> Production-ready releases<br>
+                <strong>Beta:</strong> Pre-release testing<br>
+                <strong>Development:</strong> Latest features (may be unstable)
+            </p>
+            {% else %}
+            <p style="color: #718096;">
+                Update channel: <strong>{{ current_branch }}</strong>
+                <br><small>(Managed by administrator)</small>
+            </p>
+            {% endif %}
+        </div>
+
+        <!-- Update notification banner -->
+        {% if update_available %}
+        <div class="section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 250px;">
+                    <h2 style="color: white; margin: 0 0 10px 0;">🎉 Update Available!</h2>
+                    <p style="margin: 0; opacity: 0.9;">
+                        Version {{ latest_version }} is available on {{ current_branch }} branch
+                        <br><small style="opacity: 0.8;">(current: {{ current_version }})</small>
+                    </p>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button type="button" class="btn" onclick="showPatchNotes()"
+                        style="background: rgba(255,255,255,0.2); color: white; font-weight: bold; border: 2px solid white;">
+                        What's New?
+                    </button>
+                    <button type="button" class="btn" id="update-btn" onclick="triggerUpdate()"
+                        style="background: white; color: #667eea; font-weight: bold; white-space: nowrap;">
+                        Update Now
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="section">
             <h2>Manual Actions</h2>
 
@@ -292,6 +343,214 @@
                 .catch(error => {
                     showMessage('Error triggering action: ' + error, 'error');
                     enableButtons();
+                });
+        }
+
+        function switchBranch(newBranch) {
+            if (!confirm(`Switch to ${newBranch} branch? This will check for updates on that branch.`)) {
+                // Reset selector
+                document.getElementById('branch-selector').value = '{{ current_branch }}';
+                return;
+            }
+
+            fetch(`${BASE_URL}/api/version/branch`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ branch: newBranch })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showMessage(`✓ Switched to ${newBranch} branch. ${data.message}`, 'success');
+                        // Reload page to check for updates on new branch
+                        setTimeout(() => window.location.reload(), 2000);
+                    } else {
+                        showMessage(`Failed to switch branch: ${data.error}`, 'error');
+                        // Reset selector
+                        document.getElementById('branch-selector').value = '{{ current_branch }}';
+                    }
+                })
+                .catch(error => {
+                    showMessage(`Error switching branch: ${error}`, 'error');
+                    document.getElementById('branch-selector').value = '{{ current_branch }}';
+                });
+        }
+
+        function showPatchNotes() {
+            // Fetch patch notes
+            fetch(`${BASE_URL}/api/version/check`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.release_notes) {
+                        showPatchNotesModal(data.latest_version, data.release_notes);
+                    } else {
+                        showMessage('No release notes available', 'info');
+                    }
+                })
+                .catch(error => {
+                    showMessage(`Error loading patch notes: ${error}`, 'error');
+                });
+        }
+
+        function showPatchNotesModal(version, notes) {
+            // Create modal
+            const modal = document.createElement('div');
+            modal.id = 'patch-notes-modal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+            `;
+            
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background: white;
+                border-radius: 12px;
+                max-width: 600px;
+                max-height: 80vh;
+                width: 90%;
+                overflow: hidden;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            `;
+            
+            modalContent.innerHTML = `
+                <div style="padding: 24px; border-bottom: 1px solid #e2e8f0;">
+                    <h2 style="margin: 0; color: #2d3748;">What's New in ${version}</h2>
+                </div>
+                <div style="padding: 24px; overflow-y: auto; max-height: 60vh;">
+                    <div style="white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6;">
+                        ${notes.replace(/\n/g, '<br>')}
+                    </div>
+                </div>
+                <div style="padding: 16px 24px; border-top: 1px solid #e2e8f0; text-align: right;">
+                    <button onclick="closePatchNotesModal()" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 1rem;">
+                        Close
+                    </button>
+                </div>
+            `;
+            
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            // Close on background click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closePatchNotesModal();
+                }
+            });
+        }
+
+        function closePatchNotesModal() {
+            const modal = document.getElementById('patch-notes-modal');
+            if (modal) {
+                modal.remove();
+            }
+        }
+
+        function triggerUpdate() {
+            const updateBtn = document.getElementById('update-btn');
+            
+            const confirmMsg = 'This will download and install the update. You will need to restart Memelet afterward. Continue?';
+            
+            if (!confirm(confirmMsg)) {
+                return;
+            }
+
+            updateBtn.disabled = true;
+            updateBtn.textContent = '⏳ Updating...';
+            
+            // Show progress message
+            showMessage('Downloading update... This may take a minute.', 'info');
+
+            fetch(`${BASE_URL}/api/version/update`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        if (data.already_updated) {
+                            showMessage('✓ ' + data.message, 'success');
+                            updateBtn.disabled = false;
+                            updateBtn.textContent = 'Update Now';
+                        } else if (data.restart_needed) {
+                            // Update downloaded successfully
+                            let message = '<div style="text-align: left;">';
+                            message += '<strong style="color: #10b981; font-size: 1.1em;">✓ ' + data.message + '</strong><br><br>';
+                            message += '<div style="background: #f3f4f6; padding: 15px; border-radius: 6px; margin: 10px 0;">';
+                            
+                            if (data.restart_instructions) {
+                                message += '<strong>To apply the update:</strong><br>';
+                                data.restart_instructions.forEach(line => {
+                                    if (line === '') {
+                                        message += '<br>';
+                                    } else {
+                                        message += line + '<br>';
+                                    }
+                                });
+                            }
+                            
+                            message += '</div>';
+                            
+                            // Optional: Show technical details in collapsible section
+                            if (data.git_output || data.pip_output) {
+                                message += '<details style="margin-top: 10px; font-size: 0.9em;">';
+                                message += '<summary style="cursor: pointer; color: #6b7280;">Show technical details</summary>';
+                                message += '<div style="background: #1f2937; color: #e5e7eb; padding: 10px; border-radius: 4px; margin-top: 5px; font-family: monospace; font-size: 0.85em; max-height: 200px; overflow-y: auto;">';
+                                if (data.git_output) {
+                                    message += '<strong>Git output:</strong><br>' + data.git_output.replace(/\n/g, '<br>') + '<br><br>';
+                                }
+                                if (data.pip_output) {
+                                    message += '<strong>Pip output:</strong><br>' + data.pip_output.replace(/\n/g, '<br>');
+                                }
+                                message += '</div></details>';
+                            }
+                            
+                            message += '</div>';
+                            
+                            showMessage(message, 'success');
+                            updateBtn.disabled = true;
+                            updateBtn.textContent = '✓ Updated - Restart Needed';
+                            updateBtn.style.background = '#10b981';
+                        } else {
+                            // Fallback: show message
+                            showMessage(data.message, 'success');
+                            updateBtn.disabled = false;
+                            updateBtn.textContent = 'Update Now';
+                        }
+                    } else {
+                        // Update failed
+                        let errorMsg = '<strong style="color: #ef4444;">Update failed:</strong><br><br>';
+                        errorMsg += (data.error || 'Unknown error');
+                        
+                        if (data.details) {
+                            errorMsg += '<br><br><details style="font-size: 0.9em;">';
+                            errorMsg += '<summary style="cursor: pointer;">Show error details</summary>';
+                            errorMsg += '<pre style="background: #1f2937; color: #e5e7eb; padding: 10px; border-radius: 4px; margin-top: 5px; overflow-x: auto;">';
+                            errorMsg += data.details;
+                            errorMsg += '</pre></details>';
+                        }
+                        
+                        showMessage(errorMsg, 'error');
+                        updateBtn.disabled = false;
+                        updateBtn.textContent = 'Retry Update';
+                    }
+                })
+                .catch(error => {
+                    showMessage('Error requesting update: ' + error, 'error');
+                    updateBtn.disabled = false;
+                    updateBtn.textContent = 'Retry Update';
                 });
         }
 

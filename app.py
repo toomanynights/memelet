@@ -30,6 +30,7 @@ from config import (
     get_replicate_quota_used,
 )
 import atexit
+from version_check import check_for_updates, request_update, send_session_heartbeat
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
@@ -150,6 +151,8 @@ def inject_api_key_status():
         True  -> a non-placeholder key is present in the environment and
                  there is no saved key in the database.
         False -> either no env key, or a DB key exists (BYOK / in-app config).
+    
+    Also injects version information for update notifications.
     """
     # Environment-provided key (ignore known placeholders)
     env_key = os.environ.get('REPLICATE_API_TOKEN')
@@ -195,7 +198,20 @@ def inject_api_key_status():
         and not has_db_key
     )
     
-    return dict(api_key_configured_externally=api_key_configured_externally)
+    # Check for version updates
+    version_info = {'update_available': False, 'current_version': 'v1.0', 'latest_version': None}
+    try:
+        update_check = check_for_updates()
+        if update_check:
+            version_info = update_check
+    except Exception:
+        # Silently fail version check - not critical
+        pass
+    
+    return dict(
+        api_key_configured_externally=api_key_configured_externally,
+        **version_info  # Inject version info into all templates
+    )
 
 
 def get_memes_url_base_dynamic():
@@ -262,6 +278,15 @@ def set_instance_paths_and_url_root():
     # Log authentication state for debugging
     if current_user.is_authenticated:
         app.logger.info(f"Auth state: authenticated=True, user_id={current_user.id}")
+        
+        # Send session heartbeat to Memelord (multi-tenant only)
+        # This helps track active sessions for safe version switching
+        try:
+            if session.get('_id'):
+                send_session_heartbeat(session.get('_id'))
+        except Exception:
+            # Silently fail - heartbeat is not critical
+            pass
     else:
         app.logger.info(f"Auth state: authenticated=False, user_id=None")
 
@@ -1249,11 +1274,18 @@ def settings():
     # Get base URL for API calls (for multi-tenant support)
     base_url = request.environ.get('SCRIPT_NAME', '')
     
+    # Get version/branch information
+    from version_check import get_current_branch, can_switch_branch
+    current_branch = get_current_branch()
+    can_switch = can_switch_branch()
+    
     return render_template('settings.html', 
                          log_content=log_content, 
                          current_agent=current_agent, 
                          username=current_user.username,
-                         base_url=base_url)
+                         base_url=base_url,
+                         current_branch=current_branch,
+                         can_switch_branch=can_switch)
 
 @app.route('/api/trigger-scheduled-scan', methods=['POST'])
 @login_required
@@ -2234,6 +2266,90 @@ def get_privacy_mode():
     privacy_mode = row['value'] if row else 'private'
     conn.close()
     return jsonify({'success': True, 'privacy_mode': privacy_mode})
+
+@app.route('/api/version/check', methods=['GET'])
+@login_required
+def check_version():
+    """Check for available updates"""
+    try:
+        version_info = check_for_updates()
+        if version_info:
+            return jsonify({'success': True, **version_info})
+        else:
+            return jsonify({'success': False, 'error': 'Version check unavailable'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/version/update', methods=['POST'])
+@login_required
+def trigger_update():
+    """User-initiated update request"""
+    try:
+        result = request_update()
+        
+        if result.get('success') and not result.get('already_updated'):
+            # Logout user for clean session after update
+            logout_user()
+            
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/version/branch', methods=['GET'])
+@login_required
+def get_branch_info():
+    """Get current branch and available branches"""
+    try:
+        from version_check import get_current_branch, can_switch_branch
+        
+        return jsonify({
+            'success': True,
+            'current_branch': get_current_branch(),
+            'can_switch': can_switch_branch(),
+            'available_branches': ['main', 'beta', 'dev']
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/version/branch', methods=['POST'])
+@login_required
+def switch_branch():
+    """Switch to a different branch (single-tenant only)"""
+    try:
+        from version_check import can_switch_branch, set_current_branch, check_github_for_updates
+        
+        if not can_switch_branch():
+            return jsonify({
+                'success': False,
+                'error': 'Branch switching is disabled (managed by administrator)'
+            }), 403
+        
+        data = request.get_json()
+        new_branch = data.get('branch')
+        
+        if new_branch not in ['main', 'beta', 'dev']:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid branch: {new_branch}'
+            }), 400
+        
+        # Set new branch
+        if not set_current_branch(new_branch):
+            return jsonify({
+                'success': False,
+                'error': 'Failed to set branch'
+            }), 500
+        
+        # Check for updates on new branch
+        check_github_for_updates()
+        
+        return jsonify({
+            'success': True,
+            'branch': new_branch,
+            'message': f'Switched to {new_branch} branch. Check for updates to get the latest version.'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/settings/privacy-mode', methods=['POST'])
 @login_required
