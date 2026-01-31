@@ -662,7 +662,17 @@ def get_available_version():
     """
     # Check if we're in multi-tenant mode
     if 'INSTANCE_NAME' in app.config:
-        # Multi-tenant: read from config.json first (like git_branch), then env var
+        # Multi-tenant: check branch first
+        current_branch = get_current_branch()
+        
+        # Dev branch in multi-tenant: always considered up to date
+        # (code is synced from IDE to dev branch folder, then pushed to git)
+        if current_branch == 'dev':
+            # Return current version so it shows as "up to date"
+            current_version = get_current_version()
+            return current_version if current_version else None
+        
+        # For other branches: read from config.json first (like git_branch), then env var
         try:
             instance_path = Path(get_instance_path())
             config_file = instance_path / 'config.json'
@@ -680,6 +690,32 @@ def get_available_version():
         available_version = os.environ.get('AVAILABLE_VERSION')
         if available_version and validate_version_format(available_version):
             return available_version
+        
+        # Final fallback: check GitHub API (for testing/development)
+        # In production, Memelord should populate available_version in config.json
+        try:
+            import requests
+            github_repo = os.environ.get('GITHUB_REPO', 'toomanynights/memelet')
+            branch_suffix = f'-{current_branch}' if current_branch != 'main' else ''
+            
+            tags_url = f'https://api.github.com/repos/{github_repo}/tags'
+            tags_response = requests.get(tags_url, timeout=5)
+            if tags_response.status_code == 200:
+                tags = tags_response.json()
+                if tags:
+                    for tag in tags:
+                        tag_name = tag.get('name', '').lstrip('v')
+                        if current_branch == 'main':
+                            if validate_version_format(tag_name) and '-' not in tag_name:
+                                return tag_name
+                        else:
+                            if tag_name.endswith(branch_suffix):
+                                base_version = tag_name[:-len(branch_suffix)]
+                                if validate_version_format(base_version):
+                                    return tag_name
+        except Exception as e:
+            app.logger.debug(f"GitHub API fallback failed: {e}")
+        
         return None
     else:
         # Single-tenant: check current branch first
@@ -777,8 +813,16 @@ def check_for_updates():
         'needs_update': False
     }
     
-    # Special handling for dev branch (commit-based updates)
+    # Special handling for dev branch
     if current_branch == 'dev':
+        # In multi-tenant, dev branch is always up to date (code synced from IDE)
+        if 'INSTANCE_NAME' in app.config:
+            result['update_available'] = False
+            result['needs_update'] = False
+            result['available_version'] = current  # Show current version as available
+            return result
+        
+        # Single-tenant: check for new commits
         commit_info = get_dev_commit_info()
         if commit_info:
             # Format available version for display
