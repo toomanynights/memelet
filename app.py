@@ -2772,16 +2772,9 @@ def get_disk_usage():
 def initiate_update():
     """
     Initiate version update.
-    For single-tenant: Logs out user and redirects to login with ?v= parameter.
-    For multi-tenant: Returns error (handled by memelord).
+    For single-tenant: Logs out user and redirects to login with ?v= parameter, then performs update.
+    For multi-tenant: Logs out user and redirects to login with ?v= parameter, coordinator handles update.
     """
-    # Only allow in single-tenant mode
-    if 'INSTANCE_NAME' in app.config:
-        return jsonify({
-            'success': False,
-            'error': 'Updates are handled by memelord in multi-tenant mode'
-        }), 403
-    
     try:
         # Get available version and current branch
         available_version = get_available_version()
@@ -2806,9 +2799,11 @@ def initiate_update():
         # Determine redirect URL based on branch
         if current_branch == 'dev':
             # For dev branch, use ?update=dev (no version needed)
+            # Note: In multi-tenant, coordinator will show message to use dashboard
             redirect_url = url_for('login', update='dev', _external=False)
         else:
             # For other branches, use ?v=version
+            # In multi-tenant, coordinator will intercept this and handle the update
             redirect_url = url_for('login', v=available_version, _external=False)
         
         # Return redirect response (client will follow it)

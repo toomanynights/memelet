@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.8.4
+- Fix inability to update multi-tenant
+
 ## 0.8.3
 - Fix multi-tenant handling
 
