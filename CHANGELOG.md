@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.8.7
+- Remove available version from config
+
 ## 0.8.6
 - Fix multi-tenant version not catching up
 
