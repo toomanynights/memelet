@@ -683,141 +683,74 @@ def get_dev_commit_info():
 
 def get_available_version():
     """
-    Get available version from GitHub API (single-tenant) or config.json/env var (multi-tenant).
+    Get available version from GitHub API.
     For dev branch, returns commit info string (e.g., "commit: abc1234").
     Returns version string (e.g., "1.2.3") or None if not available.
     """
-    # Check if we're in multi-tenant mode
-    if 'INSTANCE_NAME' in app.config:
-        # Multi-tenant: check branch first
-        current_branch = get_current_branch()
-        
-        # Dev branch in multi-tenant: always considered up to date
-        # (code is synced from IDE to dev branch folder, then pushed to git)
-        if current_branch == 'dev':
-            # Return current version so it shows as "up to date"
+    # Check current branch
+    current_branch = get_current_branch()
+    
+    # Dev branch: return commit info instead of version
+    if current_branch == 'dev':
+        # In multi-tenant, dev branch is always up to date (code synced from IDE)
+        if 'INSTANCE_NAME' in app.config:
             current_version = get_current_version()
             return current_version if current_version else None
         
-        # For other branches: read from config.json first (like git_branch), then env var
-        try:
-            instance_path = Path(get_instance_path())
-            config_file = instance_path / 'config.json'
-            if config_file.exists():
-                import json
-                with open(config_file, 'r') as f:
-                    instance_config = json.load(f)
-                    available_version = instance_config.get('available_version')
-                    if available_version and validate_version_format(available_version):
-                        return available_version
-        except Exception as e:
-            app.logger.warning(f"Could not read available_version from config.json: {e}")
-        
-        # Fallback to environment variable (set by wrapper)
-        available_version = os.environ.get('AVAILABLE_VERSION')
-        if available_version and validate_version_format(available_version):
-            return available_version
-        
-        # Final fallback: check GitHub API (for testing/development)
-        # In production, Memelord should populate available_version in config.json
-        try:
-            import requests
-            github_repo = os.environ.get('GITHUB_REPO', 'toomanynights/memelet')
-            branch_suffix = f'-{current_branch}' if current_branch != 'main' else ''
-            
-            tags_url = f'https://api.github.com/repos/{github_repo}/tags'
-            tags_response = requests.get(tags_url, timeout=5)
-            if tags_response.status_code == 200:
-                tags = tags_response.json()
-                if tags:
-                    for tag in tags:
-                        tag_name = tag.get('name', '').lstrip('v')
-                        if current_branch == 'main':
-                            if validate_version_format(tag_name) and '-' not in tag_name:
-                                return tag_name
-                        else:
-                            if tag_name.endswith(branch_suffix):
-                                base_version = tag_name[:-len(branch_suffix)]
-                                if validate_version_format(base_version):
-                                    return tag_name
-        except Exception as e:
-            app.logger.debug(f"GitHub API fallback failed: {e}")
-        
+        # Single-tenant: check for new commits
+        commit_info = get_dev_commit_info()
+        if commit_info:
+            if commit_info.get('remote_commit'):
+                return f"commit:{commit_info['remote_commit']}"
+            elif commit_info.get('current_commit'):
+                return f"commit:{commit_info['current_commit']}"
         return None
-    else:
-        # Single-tenant: check current branch first
-        current_branch = get_current_branch()
+    
+    # For other branches, check GitHub API for latest release
+    try:
+        import requests
+        github_repo = os.environ.get('GITHUB_REPO', 'toomanynights/memelet')
+        branch_suffix = f'-{current_branch}' if current_branch != 'main' else ''
         
-        # Dev branch: return commit info instead of version
-        if current_branch == 'dev':
-            commit_info = get_dev_commit_info()
-            if commit_info:
-                # Return remote commit if available (new commits), otherwise current commit
-                if commit_info.get('remote_commit'):
-                    return f"commit:{commit_info['remote_commit']}"
-                elif commit_info.get('current_commit'):
-                    return f"commit:{commit_info['current_commit']}"
-            # Not a git repo or failed - return None (will show "Checking..." or "None")
-            return None
-        
-        # For other branches, check GitHub API for latest release
-        # Filter tags by branch name pattern (e.g., beta releases tagged as "0.8.1-beta")
-        try:
-            import requests
-            
-            # Get GitHub repo from env or use default
-            github_repo = os.environ.get('GITHUB_REPO', 'toomanynights/memelet')
-            
-            # Get all tags and filter by branch
-            tags_url = f'https://api.github.com/repos/{github_repo}/tags'
-            tags_response = requests.get(tags_url, timeout=5)
-            if tags_response.status_code == 200:
-                tags = tags_response.json()
-                if tags:
-                    # Filter tags: prefer tags that match branch name pattern
-                    # e.g., for "beta" branch, prefer tags like "0.8.1-beta" or tags on beta branch
-                    # For "main" branch, prefer tags like "0.8.1" (no suffix)
-                    branch_suffix = f'-{current_branch}' if current_branch != 'main' else ''
-                    
-                    # First, try to find tags matching branch pattern
-                    for tag in tags:
-                        tag_name = tag.get('name', '').lstrip('v')
-                        # Check if tag matches branch pattern
-                        if current_branch == 'main':
-                            # Main branch: prefer tags without suffix (e.g., "0.8.1", not "0.8.1-beta")
-                            if validate_version_format(tag_name) and '-' not in tag_name:
-                                return tag_name
-                        else:
-                            # Other branches: prefer tags with branch suffix (e.g., "0.8.1-beta")
-                            # Return the full tag name (with suffix) so perform_update can use it correctly
-                            if tag_name.endswith(branch_suffix):
-                                # Extract base version to validate format
-                                base_version = tag_name[:-len(branch_suffix)]
-                                if validate_version_format(base_version):
-                                    return tag_name  # Return full version with suffix
-                            # Fallback: if no branch-specific tag, check if tag exists on this branch
-                            # (This requires git, so we'll just use the first valid tag as fallback)
-                    
-                    # Fallback: use first valid semver tag
-                    for tag in tags:
-                        tag_name = tag.get('name', '').lstrip('v')
-                        if validate_version_format(tag_name):
+        tags_url = f'https://api.github.com/repos/{github_repo}/tags'
+        tags_response = requests.get(tags_url, timeout=5)
+        if tags_response.status_code == 200:
+            tags = tags_response.json()
+            if tags:
+                # Filter tags: prefer tags that match branch name pattern
+                for tag in tags:
+                    tag_name = tag.get('name', '').lstrip('v')
+                    if current_branch == 'main':
+                        # Main branch: prefer tags without suffix (e.g., "0.8.1", not "0.8.1-beta")
+                        if validate_version_format(tag_name) and '-' not in tag_name:
                             return tag_name
-            
-            # Also try releases endpoint (but releases are global, not branch-specific)
-            api_url = f'https://api.github.com/repos/{github_repo}/releases/latest'
-            response = requests.get(api_url, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                tag_name = data.get('tag_name', '').lstrip('v')
-                if validate_version_format(tag_name):
-                    return tag_name
-        except requests.exceptions.RequestException as e:
-            app.logger.warning(f"Error checking GitHub for available version: {e}")
-        except Exception as e:
-            app.logger.warning(f"Error getting available version: {e}")
+                    else:
+                        # Other branches: prefer tags with branch suffix (e.g., "0.8.1-beta")
+                        if tag_name.endswith(branch_suffix):
+                            base_version = tag_name[:-len(branch_suffix)]
+                            if validate_version_format(base_version):
+                                return tag_name  # Return full version with suffix
+                
+                # Fallback: use first valid semver tag
+                for tag in tags:
+                    tag_name = tag.get('name', '').lstrip('v')
+                    if validate_version_format(tag_name):
+                        return tag_name
         
-        return None
+        # Also try releases endpoint (but releases are global, not branch-specific)
+        api_url = f'https://api.github.com/repos/{github_repo}/releases/latest'
+        response = requests.get(api_url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            tag_name = data.get('tag_name', '').lstrip('v')
+            if validate_version_format(tag_name):
+                return tag_name
+    except requests.exceptions.RequestException as e:
+        app.logger.warning(f"Error checking GitHub for available version: {e}")
+    except Exception as e:
+        app.logger.warning(f"Error getting available version: {e}")
+    
+    return None
 
 def check_for_updates():
     """
