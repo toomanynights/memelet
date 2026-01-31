@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.8.6
+- Fix multi-tenant version not catching up
+
 ## 0.8.5
 - Fix multi-tenant redirect
 
