@@ -507,16 +507,28 @@ def set_last_update_check(timestamp=None):
         app.logger.error(f"Error setting last_update_check: {e}")
         return False
 
+def get_base_version(version):
+    """
+    Extract base version from version string (removes suffix like -beta, -alpha, etc.).
+    Example: "0.8.0-beta" -> "0.8.0"
+    """
+    if not version:
+        return None
+    # Split on '-' and take the first part
+    return version.split('-')[0]
+
 def validate_version_format(version):
     """
-    Validate version format (semver: X.Y.Z).
+    Validate version format (semver: X.Y.Z, optionally with suffix like -beta).
     Returns True if valid, False otherwise.
     """
     if not version:
         return False
+    # Extract base version (without suffix) for validation
+    base_version = get_base_version(version)
     import re
     pattern = r'^\d+\.\d+\.\d+$'
-    return bool(re.match(pattern, version))
+    return bool(re.match(pattern, base_version))
 
 def find_git_executable():
     """
@@ -714,10 +726,12 @@ def get_available_version():
                                 return tag_name
                         else:
                             # Other branches: prefer tags with branch suffix (e.g., "0.8.1-beta")
+                            # Return the full tag name (with suffix) so perform_update can use it correctly
                             if tag_name.endswith(branch_suffix):
-                                version = tag_name[:-len(branch_suffix)]
-                                if validate_version_format(version):
-                                    return version
+                                # Extract base version to validate format
+                                base_version = tag_name[:-len(branch_suffix)]
+                                if validate_version_format(base_version):
+                                    return tag_name  # Return full version with suffix
                             # Fallback: if no branch-specific tag, check if tag exists on this branch
                             # (This requires git, so we'll just use the first valid tag as fallback)
                     
@@ -800,12 +814,21 @@ def check_for_updates():
         return result
     
     # Compare versions (simple string comparison works for semver)
+    # Extract base versions (without suffixes) for comparison
     try:
-        current_parts = [int(x) for x in current.split('.')]
-        available_parts = [int(x) for x in available.split('.')]
+        current_base = get_base_version(current)
+        available_base = get_base_version(available)
         
-        if available_parts > current_parts:
-            result['needs_update'] = True
+        if current_base and available_base:
+            current_parts = [int(x) for x in current_base.split('.')]
+            available_parts = [int(x) for x in available_base.split('.')]
+            
+            if available_parts > current_parts:
+                result['needs_update'] = True
+            elif available_parts == current_parts and available != current:
+                # Same base version but different suffix (e.g., 0.8.0 vs 0.8.0-beta)
+                # Consider it an update if the full version strings differ
+                result['needs_update'] = True
     except (ValueError, AttributeError):
         # If version comparison fails, assume update is needed if versions differ
         if available != current:
