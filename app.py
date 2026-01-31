@@ -427,6 +427,33 @@ def get_current_version():
         _ensure_version_settings(cursor)
         conn.commit()
         
+        # In multi-tenant mode, sync version from config.json to database
+        if 'INSTANCE_NAME' in app.config:
+            try:
+                instance_path = Path(get_instance_path())
+                config_file = instance_path / 'config.json'
+                if config_file.exists():
+                    import json
+                    with open(config_file, 'r') as f:
+                        instance_config = json.load(f)
+                        config_version = instance_config.get('version')
+                        if config_version:
+                            # Check if database version differs from config.json
+                            cursor.execute("SELECT value FROM settings WHERE key = 'current_version'")
+                            row = cursor.fetchone()
+                            db_version = row[0] if row and row[0] else None
+                            
+                            if db_version != config_version:
+                                # Sync version from config.json to database
+                                cursor.execute(
+                                    "INSERT OR REPLACE INTO settings (key, value) VALUES ('current_version', ?)",
+                                    (config_version,)
+                                )
+                                conn.commit()
+                                app.logger.info(f"Synced version from config.json to database: {config_version}")
+            except Exception as e:
+                app.logger.warning(f"Could not sync version from config.json: {e}")
+        
         cursor.execute("SELECT value FROM settings WHERE key = 'current_version'")
         row = cursor.fetchone()
         conn.close()
