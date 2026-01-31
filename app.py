@@ -535,6 +535,21 @@ def get_dev_commit_info():
             app.logger.warning(f"Git directory not found at {git_dir}")
             return None
         
+        # Check if git command is available
+        try:
+            check_git = subprocess.run(
+                ['git', '--version'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if check_git.returncode != 0:
+                app.logger.warning("Git command not available (git --version failed)")
+                return None
+        except FileNotFoundError:
+            app.logger.warning("Git command not found in PATH")
+            return None
+        
         # Get current commit hash
         result = subprocess.run(
             ['git', 'rev-parse', 'HEAD'],
@@ -547,16 +562,6 @@ def get_dev_commit_info():
             app.logger.warning(f"Failed to get current commit (returncode {result.returncode}): {result.stderr}")
             app.logger.warning(f"Working directory: {install_dir}")
             app.logger.warning(f"Directory exists: {install_dir.exists()}")
-            # Try to check if we're in a git repo at all
-            check_result = subprocess.run(
-                ['git', 'rev-parse', '--git-dir'],
-                cwd=install_dir,
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if check_result.returncode == 0:
-                app.logger.info(f"Git dir found at: {check_result.stdout.strip()}")
             return None
         
         current_commit = result.stdout.strip()
@@ -2747,9 +2752,25 @@ def get_version_info():
                 # Check if .git exists to give better error message
                 install_dir = Path(get_install_dir())
                 git_dir = install_dir / '.git'
+                # Check if git command is available
+                git_available = False
+                try:
+                    check_result = subprocess.run(
+                        ['git', '--version'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    git_available = check_result.returncode == 0
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    git_available = False
+                
                 if not git_dir.exists():
                     # Not a git repository - can't show commit info
                     current_version = "Not a git repository"
+                elif not git_available:
+                    # Git repo exists but git command not available
+                    current_version = "Git command not available"
                 else:
                     # Git repo exists but commit info failed - use CHANGELOG as fallback
                     current_version = get_current_version()
