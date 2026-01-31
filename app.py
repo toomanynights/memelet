@@ -518,6 +518,28 @@ def validate_version_format(version):
     pattern = r'^\d+\.\d+\.\d+$'
     return bool(re.match(pattern, version))
 
+def find_git_executable():
+    """
+    Find git executable in common locations or PATH.
+    Returns full path to git or None if not found.
+    """
+    # Try common locations first (most reliable)
+    common_git_paths = ['/usr/bin/git', '/usr/local/bin/git', '/bin/git']
+    for git_path in common_git_paths:
+        if Path(git_path).exists():
+            app.logger.debug(f"Found git at: {git_path}")
+            return git_path
+    
+    # Fallback to checking PATH
+    import shutil
+    git_cmd = shutil.which('git')
+    if git_cmd:
+        app.logger.debug(f"Found git in PATH: {git_cmd}")
+        return git_cmd
+    
+    app.logger.warning("Git executable not found in common locations or PATH")
+    return None
+
 def get_dev_commit_info():
     """
     Get current commit hash and check if there are new commits available on dev branch.
@@ -527,18 +549,20 @@ def get_dev_commit_info():
         install_dir = Path(get_install_dir())
         git_dir = install_dir / '.git'
         
-        app.logger.info(f"Checking for git repo at: {git_dir}")
-        app.logger.info(f"Install dir exists: {install_dir.exists()}")
-        app.logger.info(f"Git dir exists: {git_dir.exists()}")
-        
         if not git_dir.exists():
             app.logger.warning(f"Git directory not found at {git_dir}")
             return None
         
-        # Check if git command is available
+        # Find git executable
+        git_cmd = find_git_executable()
+        if not git_cmd:
+            app.logger.warning("Git command not found")
+            return None
+        
+        # Check if git command works
         try:
             check_git = subprocess.run(
-                ['git', '--version'],
+                [git_cmd, '--version'],
                 capture_output=True,
                 text=True,
                 timeout=5
@@ -547,12 +571,12 @@ def get_dev_commit_info():
                 app.logger.warning("Git command not available (git --version failed)")
                 return None
         except FileNotFoundError:
-            app.logger.warning("Git command not found in PATH")
+            app.logger.warning("Git command not found")
             return None
         
         # Get current commit hash
         result = subprocess.run(
-            ['git', 'rev-parse', 'HEAD'],
+            [git_cmd, 'rev-parse', 'HEAD'],
             cwd=install_dir,
             capture_output=True,
             text=True,
@@ -560,8 +584,6 @@ def get_dev_commit_info():
         )
         if result.returncode != 0:
             app.logger.warning(f"Failed to get current commit (returncode {result.returncode}): {result.stderr}")
-            app.logger.warning(f"Working directory: {install_dir}")
-            app.logger.warning(f"Directory exists: {install_dir.exists()}")
             return None
         
         current_commit = result.stdout.strip()
@@ -571,7 +593,7 @@ def get_dev_commit_info():
         
         # Fetch latest (don't pull, just check) - ignore errors (network might be down)
         fetch_result = subprocess.run(
-            ['git', 'fetch', 'origin', 'dev'],
+            [git_cmd, 'fetch', 'origin', 'dev'],
             cwd=install_dir,
             capture_output=True,
             text=True,
@@ -588,7 +610,7 @@ def get_dev_commit_info():
         
         # Get remote commit hash
         result = subprocess.run(
-            ['git', 'rev-parse', 'origin/dev'],
+            [git_cmd, 'rev-parse', 'origin/dev'],
             cwd=install_dir,
             capture_output=True,
             text=True,
@@ -832,9 +854,17 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                         'message': 'Install directory is not a git repository. Cannot update dev branch.'
                     }
                 
+                # Find git executable
+                git_cmd = find_git_executable()
+                if not git_cmd:
+                    return {
+                        'success': False,
+                        'message': 'Git command not found. Please ensure git is installed.'
+                    }
+                
                 # Get current commit hash
                 result = subprocess.run(
-                    ['git', 'rev-parse', 'HEAD'],
+                    [git_cmd, 'rev-parse', 'HEAD'],
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
@@ -845,7 +875,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                 # Fetch and pull
                 app.logger.info("Fetching latest changes...")
                 result = subprocess.run(
-                    ['git', 'fetch', 'origin'],
+                    [git_cmd, 'fetch', 'origin'],
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
@@ -859,7 +889,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                 
                 app.logger.info("Pulling latest commits...")
                 result = subprocess.run(
-                    ['git', 'pull', 'origin', 'dev'],
+                    [git_cmd, 'pull', 'origin', 'dev'],
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
@@ -873,7 +903,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                 
                 # Get new commit hash
                 result = subprocess.run(
-                    ['git', 'rev-parse', 'HEAD'],
+                    [git_cmd, 'rev-parse', 'HEAD'],
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
@@ -930,6 +960,14 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
         
         app.logger.info(f"Downloading version {target_version} from {github_repo}")
         
+        # Find git executable
+        git_cmd = find_git_executable()
+        if not git_cmd:
+            return {
+                'success': False,
+                'message': 'Git command not found. Please ensure git is installed.'
+            }
+        
         # Create temporary directory for download
         temp_dir = install_dir.parent / f'memelet-{target_version}-temp'
         if temp_dir.exists():
@@ -940,7 +978,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
             # Clone the repository at the specific tag/version
             tag = f'v{target_version}' if not target_version.startswith('v') else target_version
             clone_cmd = [
-                'git', 'clone',
+                git_cmd, 'clone',
                 '--depth', '1',
                 '--branch', tag,
                 f'https://github.com/{github_repo}.git',
@@ -951,7 +989,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
             if result.returncode != 0:
                 # Try without branch (might be a tag)
                 clone_cmd = [
-                    'git', 'clone',
+                    git_cmd, 'clone',
                     '--depth', '1',
                     f'https://github.com/{github_repo}.git',
                     str(temp_dir)
@@ -964,7 +1002,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                     }
                 
                 # Checkout the specific tag
-                checkout_cmd = ['git', 'checkout', tag]
+                checkout_cmd = [git_cmd, 'checkout', tag]
                 result = subprocess.run(checkout_cmd, cwd=temp_dir, capture_output=True, text=True, timeout=60)
                 if result.returncode != 0:
                     return {
@@ -2753,17 +2791,8 @@ def get_version_info():
                 install_dir = Path(get_install_dir())
                 git_dir = install_dir / '.git'
                 # Check if git command is available
-                git_available = False
-                try:
-                    check_result = subprocess.run(
-                        ['git', '--version'],
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    git_available = check_result.returncode == 0
-                except (FileNotFoundError, subprocess.TimeoutExpired):
-                    git_available = False
+                git_cmd = find_git_executable()
+                git_available = git_cmd is not None
                 
                 if not git_dir.exists():
                     # Not a git repository - can't show commit info
