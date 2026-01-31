@@ -600,7 +600,7 @@ def get_dev_commit_info():
             timeout=30
         )
         if fetch_result.returncode != 0:
-            app.logger.debug(f"Git fetch failed (may be offline): {fetch_result.stderr}")
+            app.logger.warning(f"Git fetch failed (may be offline): {fetch_result.stderr}")
             # Still return current commit even if fetch fails
             return {
                 'current_commit': current_commit[:8] if current_commit else None,
@@ -617,7 +617,8 @@ def get_dev_commit_info():
             timeout=10
         )
         if result.returncode != 0:
-            app.logger.debug(f"Failed to get remote commit: {result.stderr}")
+            app.logger.warning(f"Failed to get remote commit: {result.stderr}")
+            app.logger.warning(f"Current commit: {current_commit[:8] if current_commit else 'None'}")
             return {
                 'current_commit': current_commit[:8] if current_commit else None,
                 'has_new_commits': False,
@@ -626,6 +627,8 @@ def get_dev_commit_info():
         
         remote_commit = result.stdout.strip()
         has_new_commits = current_commit != remote_commit
+        
+        app.logger.info(f"Commit comparison: current={current_commit[:8] if current_commit else 'None'}, remote={remote_commit[:8] if remote_commit else 'None'}, has_new={has_new_commits}")
         
         return {
             'current_commit': current_commit[:8] if current_commit else None,
@@ -673,10 +676,12 @@ def get_available_version():
         # Dev branch: return commit info instead of version
         if current_branch == 'dev':
             commit_info = get_dev_commit_info()
-            if commit_info and commit_info.get('current_commit'):
-                # Return commit hash as "available version" for display
-                # The check_for_updates function will handle commit comparison
-                return f"commit:{commit_info['current_commit']}"
+            if commit_info:
+                # Return remote commit if available (new commits), otherwise current commit
+                if commit_info.get('remote_commit'):
+                    return f"commit:{commit_info['remote_commit']}"
+                elif commit_info.get('current_commit'):
+                    return f"commit:{commit_info['current_commit']}"
             # Not a git repo or failed - return None (will show "Checking..." or "None")
             return None
         
