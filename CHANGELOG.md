@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.8.5
+- Fix multi-tenant redirect
+
 ## 0.8.4
 - Fix inability to update multi-tenant
 

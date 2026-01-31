@@ -2806,6 +2806,12 @@ def initiate_update():
             # In multi-tenant, coordinator will intercept this and handle the update
             redirect_url = url_for('login', v=available_version, _external=False)
         
+        # In multi-tenant mode, ensure SCRIPT_NAME is included in redirect URL
+        if 'INSTANCE_NAME' in app.config:
+            script_name = request.environ.get('SCRIPT_NAME', '')
+            if script_name and not redirect_url.startswith(script_name):
+                redirect_url = script_name + redirect_url
+        
         # Return redirect response (client will follow it)
         return jsonify({
             'success': True,
