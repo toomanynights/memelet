@@ -527,8 +527,12 @@ def get_dev_commit_info():
         install_dir = Path(get_install_dir())
         git_dir = install_dir / '.git'
         
+        app.logger.info(f"Checking for git repo at: {git_dir}")
+        app.logger.info(f"Install dir exists: {install_dir.exists()}")
+        app.logger.info(f"Git dir exists: {git_dir.exists()}")
+        
         if not git_dir.exists():
-            app.logger.debug(f"Git directory not found at {git_dir}")
+            app.logger.warning(f"Git directory not found at {git_dir}")
             return None
         
         # Get current commit hash
@@ -540,7 +544,19 @@ def get_dev_commit_info():
             timeout=10
         )
         if result.returncode != 0:
-            app.logger.warning(f"Failed to get current commit: {result.stderr}")
+            app.logger.warning(f"Failed to get current commit (returncode {result.returncode}): {result.stderr}")
+            app.logger.warning(f"Working directory: {install_dir}")
+            app.logger.warning(f"Directory exists: {install_dir.exists()}")
+            # Try to check if we're in a git repo at all
+            check_result = subprocess.run(
+                ['git', 'rev-parse', '--git-dir'],
+                cwd=install_dir,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if check_result.returncode == 0:
+                app.logger.info(f"Git dir found at: {check_result.stdout.strip()}")
             return None
         
         current_commit = result.stdout.strip()
