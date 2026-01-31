@@ -47,6 +47,44 @@
         </div>
 
         <div class="section">
+            <h2>📦 Version Information</h2>
+            <p class="action-description" id="version-description">
+                Loading version information...
+            </p>
+            <div class="version-info-container" id="version-info-container" style="display: none;">
+                <div class="version-info-item" style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600; color: #374151;">Current Version:</span>
+                        <span id="current-version-display" style="color: #6b7280;">-</span>
+                    </div>
+                </div>
+                <div class="version-info-item" style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600; color: #374151;">Branch:</span>
+                        <span id="current-branch-display" style="color: #6b7280;">-</span>
+                    </div>
+                </div>
+                <div class="version-info-item" style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600; color: #374151;">Available Version:</span>
+                        <span id="available-version-display" style="color: #6b7280;">-</span>
+                    </div>
+                </div>
+                <div class="version-info-item" id="update-status-container" style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
+                    <div id="update-status-message" style="color: #059669; font-weight: 500;"></div>
+                    <button 
+                        id="update-button" 
+                        class="btn btn-primary" 
+                        style="display: none; margin-top: 12px; width: 100%;"
+                        onclick="initiateUpdate()"
+                    >
+                        🔄 Update Now
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
             <h2>Latest Scan Activity</h2>
             <p class="action-description">
                 Most recent scan log entry (auto-refreshes every 10 seconds)
@@ -93,7 +131,7 @@
                     <div style="flex: 1;">
                         <strong style="font-size: 1.05rem;">🤖 AI Functions</strong>
                         <p style="margin: 5px 0 0 0; font-size: 0.9rem; color: #718096;">
-                            Enable AI-powered description generation and tag suggestions
+                            Enklable AI-powered description generation and tag suggestions
                         </p>
                     </div>
                     <label class="toggle-switch" style="margin-left: 20px;">
@@ -1236,11 +1274,159 @@
             document.addEventListener('DOMContentLoaded', function() {
                 updateDiskUsage();
                 updateReplicateUsage();
+                loadVersionInfo();
             });
         } else {
             // DOM is already ready
             updateDiskUsage();
             updateReplicateUsage();
+            loadVersionInfo();
+        }
+
+        // Version information
+        function loadVersionInfo() {
+            fetch(`${BASE_URL}/api/settings/version`, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        const container = document.getElementById('version-info-container');
+                        const description = document.getElementById('version-description');
+                        
+                        // Update current version
+                        const currentVersionDisplay = document.getElementById('current-version-display');
+                        let currentVersionText = data.current_version || 'Not set';
+                        // Handle commit-based version display for dev branch
+                        if (currentVersionText.startsWith('commit:')) {
+                            const commitHash = currentVersionText.replace('commit:', '');
+                            currentVersionText = `commit: ${commitHash}`;
+                        }
+                        currentVersionDisplay.textContent = currentVersionText;
+                        currentVersionDisplay.style.color = data.current_version ? '#374151' : '#9ca3af';
+                        
+                        // Update branch
+                        const branchDisplay = document.getElementById('current-branch-display');
+                        branchDisplay.textContent = data.current_branch || 'main';
+                        
+                        // Update available version
+                        const availableVersionDisplay = document.getElementById('available-version-display');
+                        if (data.available_version) {
+                            // Handle commit-based version display for dev branch
+                            if (data.available_version.startsWith('commit:')) {
+                                const commitHash = data.available_version.replace('commit:', '');
+                                availableVersionDisplay.textContent = `commit: ${commitHash}`;
+                            } else {
+                                availableVersionDisplay.textContent = data.available_version;
+                            }
+                            availableVersionDisplay.style.color = '#374151';
+                        } else {
+                            // Show appropriate message based on branch
+                            if (data.current_branch === 'dev') {
+                                availableVersionDisplay.textContent = 'Not a git repository';
+                                availableVersionDisplay.style.color = '#f59e0b';
+                            } else {
+                                availableVersionDisplay.textContent = 'Checking...';
+                                availableVersionDisplay.style.color = '#9ca3af';
+                            }
+                        }
+                        
+                        // Update status message
+                        const updateStatusContainer = document.getElementById('update-status-container');
+                        const updateStatusMessage = document.getElementById('update-status-message');
+                        const updateButton = document.getElementById('update-button');
+                        
+                        if (data.update_available && data.needs_update) {
+                            updateStatusContainer.style.display = 'block';
+                            // Format update message based on version type
+                            let updateMsg = '🆕 Update available';
+                            if (data.available_version) {
+                                if (data.available_version.startsWith('commit:')) {
+                                    const commitHash = data.available_version.replace('commit:', '');
+                                    updateMsg = `🆕 New commits available (${commitHash})`;
+                                } else {
+                                    updateMsg = `🆕 Update available: ${data.available_version}`;
+                                }
+                            }
+                            updateStatusMessage.textContent = updateMsg;
+                            updateStatusMessage.style.color = '#059669';
+                            if (updateButton) {
+                                updateButton.style.display = 'block';
+                            }
+                        } else if (data.update_available && !data.needs_update) {
+                            updateStatusContainer.style.display = 'block';
+                            updateStatusMessage.textContent = '✅ You are on the latest version';
+                            updateStatusMessage.style.color = '#059669';
+                            if (updateButton) {
+                                updateButton.style.display = 'none';
+                            }
+                        } else {
+                            updateStatusContainer.style.display = 'none';
+                            if (updateButton) {
+                                updateButton.style.display = 'none';
+                            }
+                        }
+                        
+                        // Show container and update description
+                        container.style.display = 'block';
+                        description.textContent = 'Current version and update information';
+                    } else {
+                        const description = document.getElementById('version-description');
+                        description.textContent = 'Error loading version information';
+                        description.style.color = '#ef4444';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading version info:', error);
+                    const description = document.getElementById('version-description');
+                    description.textContent = 'Error loading version information';
+                    description.style.color = '#ef4444';
+                });
+        }
+
+        // Initiate update
+        function initiateUpdate() {
+            const updateButton = document.getElementById('update-button');
+            if (updateButton) {
+                updateButton.disabled = true;
+                updateButton.textContent = '🔄 Updating...';
+            }
+            
+            fetch(`${BASE_URL}/api/settings/update`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.redirect_url) {
+                    // Redirect to login page with update parameter
+                    window.location.href = data.redirect_url;
+                } else {
+                    alert(`Update failed: ${data.error || 'Unknown error'}`);
+                    if (updateButton) {
+                        updateButton.disabled = false;
+                        updateButton.textContent = '🔄 Update Now';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error initiating update:', error);
+                alert('Error initiating update. Please try again.');
+                if (updateButton) {
+                    updateButton.disabled = false;
+                    updateButton.textContent = '🔄 Update Now';
+                }
+            });
         }
 
         // Refresh disk usage every 30 seconds
@@ -1248,6 +1434,9 @@
 
         // Refresh Replicate usage every 10 seconds (more frequent for quota tracking)
         setInterval(updateReplicateUsage, 10000);
+        
+        // Load version info on page load
+        loadVersionInfo();
         
         // Refresh usage when page becomes visible (e.g., after processing memes)
         document.addEventListener('visibilitychange', function() {
