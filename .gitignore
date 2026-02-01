@@ -33,3 +33,4 @@ files/_system/thumbnails/*
 .trash/
 .agent/
 .claude/
+.helpers/
