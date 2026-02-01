@@ -1249,7 +1249,7 @@
             content.innerHTML = '<p>Loading release notes...</p>';
             
             // Fetch release notes from API
-            fetch(`${baseUrl}/api/release-notes/${version}`)
+            fetch(`${BASE_URL}/api/release-notes/${version}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -1288,7 +1288,7 @@
         function dismissReleaseNotes() {
             if (!currentReleaseVersion) return;
             
-            fetch(`${baseUrl}/api/release-notes/${currentReleaseVersion}/dismiss`, {
+            fetch(`${BASE_URL}/api/release-notes/${currentReleaseVersion}/dismiss`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1309,7 +1309,7 @@
 
         // Check for release notes on page load
         function checkReleaseNotes() {
-            fetch(`${baseUrl}/api/settings/version`)
+            fetch(`${BASE_URL}/api/settings/version`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success && data.show_release_notes && data.current_version) {
