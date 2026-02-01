@@ -167,6 +167,11 @@ def _ensure_version_settings(cursor):
     cursor.execute("SELECT value FROM settings WHERE key = 'last_update_check'")
     if cursor.fetchone() is None:
         cursor.execute("INSERT INTO settings (key, value) VALUES ('last_update_check', NULL)")
+    
+    # dismissed_release_notes: JSON array of version strings that user has dismissed
+    cursor.execute("SELECT value FROM settings WHERE key = 'dismissed_release_notes'")
+    if cursor.fetchone() is None:
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('dismissed_release_notes', '[]')")
 
 # Default config
 @app.context_processor
@@ -532,6 +537,57 @@ def set_last_update_check(timestamp=None):
     except Exception as e:
         app.logger.error(f"Error setting last_update_check: {e}")
         return False
+
+def get_dismissed_release_notes():
+    """Get list of dismissed release note versions from settings table. Returns list of version strings."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = 'dismissed_release_notes'")
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row and row[0]:
+            import json
+            try:
+                return json.loads(row[0])
+            except json.JSONDecodeError:
+                return []
+        return []
+    except Exception:
+        return []
+
+def dismiss_release_notes(version):
+    """Add a version to the dismissed release notes list. Returns True if successful."""
+    try:
+        dismissed = get_dismissed_release_notes()
+        if version not in dismissed:
+            dismissed.append(version)
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            import json
+            cursor.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('dismissed_release_notes', ?)",
+                (json.dumps(dismissed),)
+            )
+            conn.commit()
+            conn.close()
+        return True
+    except Exception as e:
+        app.logger.error(f"Error dismissing release notes: {e}")
+        return False
+
+def should_show_release_notes(version):
+    """Check if release notes should be shown for a given version. Returns True if should show."""
+    if not version:
+        return False
+    
+    # Don't show for dev branch commit hashes
+    if version.startswith('commit:'):
+        return False
+    
+    dismissed = get_dismissed_release_notes()
+    return version not in dismissed
 
 def get_base_version(version):
     """
@@ -3028,6 +3084,9 @@ def get_version_info():
         except Exception:
             last_update_check = None
         
+        # Check if release notes should be shown
+        show_release_notes = should_show_release_notes(current_version)
+        
         return jsonify({
             'success': True,
             'current_version': current_version,
@@ -3035,10 +3094,80 @@ def get_version_info():
             'available_version': available_version,
             'update_available': update_info['update_available'],
             'needs_update': update_info['needs_update'],
-            'last_update_check': last_update_check
+            'last_update_check': last_update_check,
+            'show_release_notes': show_release_notes
         })
     except Exception as e:
         app.logger.error(f"Error getting version info: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/release-notes/<version>', methods=['GET'])
+@login_required
+def get_release_notes(version):
+    """Get release notes from GitHub for a specific version."""
+    try:
+        import requests
+        github_repo = os.environ.get('GITHUB_REPO', 'toomanynights/memelet')
+        
+        # Try to find release by tag
+        tag = f'v{version}'
+        releases_url = f'https://api.github.com/repos/{github_repo}/releases/tags/{tag}'
+        
+        response = requests.get(releases_url, timeout=10)
+        if response.status_code == 200:
+            release_data = response.json()
+            return jsonify({
+                'success': True,
+                'version': version,
+                'title': release_data.get('name', f'Release {version}'),
+                'body': release_data.get('body', ''),
+                'published_at': release_data.get('published_at', ''),
+                'html_url': release_data.get('html_url', '')
+            })
+        
+        # If tag not found, try latest release
+        if response.status_code == 404:
+            latest_url = f'https://api.github.com/repos/{github_repo}/releases/latest'
+            latest_response = requests.get(latest_url, timeout=10)
+            if latest_response.status_code == 200:
+                latest_data = latest_response.json()
+                latest_tag = latest_data.get('tag_name', '').lstrip('v')
+                if latest_tag == version:
+                    return jsonify({
+                        'success': True,
+                        'version': version,
+                        'title': latest_data.get('name', f'Release {version}'),
+                        'body': latest_data.get('body', ''),
+                        'published_at': latest_data.get('published_at', ''),
+                        'html_url': latest_data.get('html_url', '')
+                    })
+        
+        return jsonify({
+            'success': False,
+            'error': f'Release notes not found for version {version}'
+        }), 404
+        
+    except requests.exceptions.RequestException as e:
+        app.logger.warning(f"Error fetching release notes from GitHub: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to fetch release notes from GitHub'
+        }), 500
+    except Exception as e:
+        app.logger.error(f"Error getting release notes: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/release-notes/<version>/dismiss', methods=['POST'])
+@login_required
+def dismiss_release_notes_endpoint(version):
+    """Mark release notes as dismissed for a specific version."""
+    try:
+        if dismiss_release_notes(version):
+            return jsonify({'success': True, 'message': f'Release notes for {version} dismissed'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to dismiss release notes'}), 500
+    except Exception as e:
+        app.logger.error(f"Error dismissing release notes: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/settings/replicate-usage', methods=['GET'])

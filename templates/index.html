@@ -282,6 +282,23 @@
         </div>
     </div>
 
+    <!-- Release Notes Modal -->
+    <div id="releaseNotesModal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <span>Release Notes</span>
+                <button onclick="closeReleaseNotesModal()" style="background: none; border: none; font-size: 1.5em; cursor: pointer; float: right;">&times;</button>
+            </div>
+            <div id="releaseNotesContent" style="padding: 20px; max-height: 70vh; overflow-y: auto;">
+                <p>Loading release notes...</p>
+            </div>
+            <div style="padding: 20px; border-top: 1px solid #e5e7eb; display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="closeReleaseNotesModal()">Close</button>
+                <button class="btn btn-primary" onclick="dismissReleaseNotes()">Don't show again</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Upload Modal -->
     <div id="uploadModal" class="modal upload-modal">
         <div class="modal-content">
@@ -1220,7 +1237,97 @@
             __gridResizeTO = setTimeout(resizeAllGridItems, 100);
         }
 
+        // Release Notes Modal Functions
+        let currentReleaseVersion = null;
+
+        function openReleaseNotesModal(version) {
+            currentReleaseVersion = version;
+            const modal = document.getElementById('releaseNotesModal');
+            const content = document.getElementById('releaseNotesContent');
+            
+            modal.classList.add('active');
+            content.innerHTML = '<p>Loading release notes...</p>';
+            
+            // Fetch release notes from API
+            fetch(`${baseUrl}/api/release-notes/${version}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Convert markdown to HTML (simple conversion)
+                        const body = data.body || 'No release notes available.';
+                        const htmlBody = body
+                            .replace(/### (.*)/g, '<h3>$1</h3>')
+                            .replace(/## (.*)/g, '<h2>$1</h2>')
+                            .replace(/# (.*)/g, '<h1>$1</h1>')
+                            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                            .replace(/`(.*?)`/g, '<code>$1</code>')
+                            .replace(/\n/g, '<br>');
+                        
+                        content.innerHTML = `
+                            <h2>${data.title || `Release ${version}`}</h2>
+                            ${data.published_at ? `<p style="color: #6b7280; font-size: 0.9em;">Published: ${new Date(data.published_at).toLocaleDateString()}</p>` : ''}
+                            <div style="margin-top: 20px; line-height: 1.6;">
+                                ${htmlBody}
+                            </div>
+                            ${data.html_url ? `<p style="margin-top: 20px;"><a href="${data.html_url}" target="_blank" style="color: #3b82f6;">View on GitHub →</a></p>` : ''}
+                        `;
+                    } else {
+                        content.innerHTML = `<p>Could not load release notes: ${data.error || 'Unknown error'}</p>`;
+                    }
+                })
+                .catch(error => {
+                    content.innerHTML = `<p>Error loading release notes: ${error.message}</p>`;
+                });
+        }
+
+        function closeReleaseNotesModal() {
+            document.getElementById('releaseNotesModal').classList.remove('active');
+        }
+
+        function dismissReleaseNotes() {
+            if (!currentReleaseVersion) return;
+            
+            fetch(`${baseUrl}/api/release-notes/${currentReleaseVersion}/dismiss`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        closeReleaseNotesModal();
+                    } else {
+                        alert('Error dismissing release notes: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    alert('Error dismissing release notes: ' + error);
+                });
+        }
+
+        // Check for release notes on page load
+        function checkReleaseNotes() {
+            fetch(`${baseUrl}/api/settings/version`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.show_release_notes && data.current_version) {
+                        // Don't show for commit hashes
+                        if (!data.current_version.startsWith('commit:')) {
+                            openReleaseNotesModal(data.current_version);
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking release notes:', error);
+                });
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
+            // Check for release notes on page load
+            checkReleaseNotes();
+            
             // Initial pass
             resizeAllGridItems();
 
