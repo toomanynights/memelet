@@ -1131,9 +1131,10 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                         'message': f'Git fetch failed: {result.stderr}'
                     }
                 
-                app.logger.info("Pulling latest commits...")
+                app.logger.info("Resetting to latest dev branch (discarding local changes)...")
+                # Hard reset to origin/dev to discard any local changes
                 result = subprocess.run(
-                    [git_cmd, 'pull', 'origin', 'dev'],
+                    [git_cmd, 'reset', '--hard', 'origin/dev'],
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
@@ -1142,7 +1143,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                 if result.returncode != 0:
                     return {
                         'success': False,
-                        'message': f'Git pull failed: {result.stderr}'
+                        'message': f'Git reset failed: {result.stderr}'
                     }
                 
                 # Get new commit hash
