@@ -748,67 +748,101 @@ def get_available_version():
     """
     # Check current branch
     current_branch = get_current_branch()
+    app.logger.info(f"get_available_version(): current_branch={current_branch}")
     
     # Dev branch: return commit info instead of version
     if current_branch == 'dev':
+        app.logger.info(f"get_available_version(): dev branch detected")
         # In multi-tenant, dev branch is always up to date (code synced from IDE)
+        # Return the current commit hash to show consistency
         if 'INSTANCE_NAME' in app.config:
+            app.logger.info(f"get_available_version(): multi-tenant mode detected, INSTANCE_NAME={app.config.get('INSTANCE_NAME')}")
+            # For dev branch, get commit info to return commit-based version
+            commit_info = get_dev_commit_info()
+            if commit_info and commit_info.get('current_commit'):
+                result = f"commit:{commit_info['current_commit']}"
+                app.logger.info(f"get_available_version(): returning {result} for multi-tenant dev branch (from commit info)")
+                return result
+            # Fallback to database version if commit info not available
             current_version = get_current_version()
-            return current_version if current_version else None
+            app.logger.info(f"get_available_version(): current_version from DB={current_version} (fallback)")
+            result = current_version if current_version else None
+            app.logger.info(f"get_available_version(): returning {result} for multi-tenant dev branch (fallback)")
+            return result
         
+        app.logger.info(f"get_available_version(): single-tenant dev branch, checking for commits")
         # Single-tenant: check for new commits
         commit_info = get_dev_commit_info()
         if commit_info:
             if commit_info.get('remote_commit'):
-                return f"commit:{commit_info['remote_commit']}"
+                result = f"commit:{commit_info['remote_commit']}"
+                app.logger.info(f"get_available_version(): returning {result} (remote commit)")
+                return result
             elif commit_info.get('current_commit'):
-                return f"commit:{commit_info['current_commit']}"
+                result = f"commit:{commit_info['current_commit']}"
+                app.logger.info(f"get_available_version(): returning {result} (current commit)")
+                return result
+        app.logger.info(f"get_available_version(): no commit info available, returning None")
         return None
     
     # For other branches, check GitHub API for latest release
+    app.logger.info(f"get_available_version(): checking GitHub API for branch={current_branch}")
     try:
         import requests
         github_repo = os.environ.get('GITHUB_REPO', 'toomanynights/memelet')
         branch_suffix = f'-{current_branch}' if current_branch != 'main' else ''
+        app.logger.info(f"get_available_version(): github_repo={github_repo}, branch_suffix={branch_suffix}")
         
         tags_url = f'https://api.github.com/repos/{github_repo}/tags'
         tags_response = requests.get(tags_url, timeout=5)
+        app.logger.info(f"get_available_version(): tags API response status={tags_response.status_code}")
         if tags_response.status_code == 200:
             tags = tags_response.json()
+            app.logger.info(f"get_available_version(): found {len(tags)} tags")
             if tags:
                 # Filter tags: prefer tags that match branch name pattern
                 for tag in tags:
                     tag_name = tag.get('name', '').lstrip('v')
+                    app.logger.info(f"get_available_version(): checking tag={tag_name}")
                     if current_branch == 'main':
                         # Main branch: prefer tags without suffix (e.g., "0.8.1", not "0.8.1-beta")
                         if validate_version_format(tag_name) and '-' not in tag_name:
+                            app.logger.info(f"get_available_version(): returning main branch tag={tag_name}")
                             return tag_name
                     else:
                         # Other branches: prefer tags with branch suffix (e.g., "0.8.1-beta")
                         if tag_name.endswith(branch_suffix):
                             base_version = tag_name[:-len(branch_suffix)]
                             if validate_version_format(base_version):
+                                app.logger.info(f"get_available_version(): returning branch-specific tag={tag_name}")
                                 return tag_name  # Return full version with suffix
                 
                 # Fallback: use first valid semver tag
+                app.logger.info(f"get_available_version(): no branch-specific tag found, using fallback")
                 for tag in tags:
                     tag_name = tag.get('name', '').lstrip('v')
                     if validate_version_format(tag_name):
+                        app.logger.info(f"get_available_version(): returning fallback tag={tag_name}")
                         return tag_name
         
         # Also try releases endpoint (but releases are global, not branch-specific)
         api_url = f'https://api.github.com/repos/{github_repo}/releases/latest'
+        app.logger.info(f"get_available_version(): trying releases endpoint")
         response = requests.get(api_url, timeout=5)
+        app.logger.info(f"get_available_version(): releases API response status={response.status_code}")
         if response.status_code == 200:
             data = response.json()
             tag_name = data.get('tag_name', '').lstrip('v')
+            app.logger.info(f"get_available_version(): latest release tag={tag_name}")
             if validate_version_format(tag_name):
+                app.logger.info(f"get_available_version(): returning release tag={tag_name}")
                 return tag_name
     except requests.exceptions.RequestException as e:
         app.logger.warning(f"Error checking GitHub for available version: {e}")
     except Exception as e:
         app.logger.warning(f"Error getting available version: {e}")
     
+    app.logger.info(f"get_available_version(): no version found, returning None")
     return None
 
 def check_for_updates():
@@ -2869,6 +2903,7 @@ def get_version_info():
                 app.logger.warning(f"Could not sync branch from config.json: {e}")
         
         current_branch = get_current_branch()
+        app.logger.info(f"get_version_info(): current_branch={current_branch}, INSTANCE_NAME={app.config.get('INSTANCE_NAME', 'NOT_SET')}")
         
         # For dev branch, show commit hash instead of version
         if current_branch == 'dev':
@@ -2910,8 +2945,11 @@ def get_version_info():
                     current_version = git_version
                     app.logger.info(f"Synced version from git tags: {git_version}")
         
+        app.logger.info(f"get_version_info(): calling get_available_version()")
         available_version = get_available_version()
+        app.logger.info(f"get_version_info(): get_available_version() returned={available_version}")
         update_info = check_for_updates()
+        app.logger.info(f"get_version_info(): check_for_updates() returned update_available={update_info.get('update_available')}, needs_update={update_info.get('needs_update')}")
         
         # Update last_update_check timestamp (we just checked for updates)
         set_last_update_check()
