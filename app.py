@@ -582,6 +582,7 @@ def get_version_from_git():
     """
     Detect version from git tags using 'git describe --tags'.
     Works for both exact tag matches and commits after tags.
+    Considers branch-specific tags (e.g., prefers '0.8.7-beta' for beta branch).
     Returns version string (e.g., "0.8.7" or "0.8.7-beta") or None if not found.
     """
     try:
@@ -596,6 +597,11 @@ def get_version_from_git():
         if not git_cmd:
             return None
         
+        # Get current branch to prefer branch-specific tags
+        current_branch = get_current_branch()
+        branch_suffix = f'-{current_branch}' if current_branch != 'main' and current_branch != 'dev' else ''
+        app.logger.info(f"get_version_from_git(): current_branch={current_branch}, branch_suffix={branch_suffix}")
+        
         # Try to get exact tag match first (if HEAD is on a tag)
         result = subprocess.run(
             [git_cmd, 'describe', '--tags', '--exact-match'],
@@ -609,10 +615,22 @@ def get_version_from_git():
             tag = result.stdout.strip()
             # Remove 'v' prefix if present (e.g., 'v0.8.7' -> '0.8.7')
             version = tag.lstrip('v')
-            if validate_version_format(version):
-                return version
+            app.logger.info(f"get_version_from_git(): exact tag match={version}")
+            # Check if it matches branch pattern
+            if branch_suffix:
+                if version.endswith(branch_suffix):
+                    if validate_version_format(version):
+                        app.logger.info(f"get_version_from_git(): returning branch-specific exact tag={version}")
+                        return version
+            else:
+                # Main branch: prefer tags without suffix
+                if '-' not in version and validate_version_format(version):
+                    app.logger.info(f"get_version_from_git(): returning main branch exact tag={version}")
+                    return version
+            # If exact tag doesn't match branch, continue to find nearest matching tag
         
-        # If not on exact tag, try to get nearest tag
+        # If not on exact tag, get all tags and find the best match
+        # First, try to get nearest tag with git describe
         result = subprocess.run(
             [git_cmd, 'describe', '--tags'],
             cwd=install_dir,
@@ -627,8 +645,53 @@ def get_version_from_git():
             # Extract the tag part (before first hyphen if it's a commit count)
             tag_part = describe_output.split('-')[0]
             version = tag_part.lstrip('v')
-            if validate_version_format(version):
-                return version
+            app.logger.info(f"get_version_from_git(): nearest tag from describe={version}")
+            
+            # Check if it matches branch pattern
+            if branch_suffix:
+                if version.endswith(branch_suffix):
+                    if validate_version_format(version):
+                        app.logger.info(f"get_version_from_git(): returning branch-specific nearest tag={version}")
+                        return version
+            else:
+                # Main branch: prefer tags without suffix
+                if '-' not in version and validate_version_format(version):
+                    app.logger.info(f"get_version_from_git(): returning main branch nearest tag={version}")
+                    return version
+        
+        # If nearest tag doesn't match branch, try to find all tags and filter by branch
+        # This is more expensive but ensures we get the right tag for the branch
+        result = subprocess.run(
+            [git_cmd, 'tag', '--sort=-version:refname'],
+            cwd=install_dir,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            tags = [tag.strip().lstrip('v') for tag in result.stdout.strip().split('\n') if tag.strip()]
+            app.logger.info(f"get_version_from_git(): found {len(tags)} tags, filtering for branch={current_branch}")
+            
+            # Filter tags by branch pattern
+            for tag in tags:
+                if branch_suffix:
+                    # Beta branch: prefer tags with -beta suffix
+                    if tag.endswith(branch_suffix):
+                        if validate_version_format(tag):
+                            app.logger.info(f"get_version_from_git(): returning branch-specific tag from list={tag}")
+                            return tag
+                else:
+                    # Main branch: prefer tags without suffix
+                    if '-' not in tag and validate_version_format(tag):
+                        app.logger.info(f"get_version_from_git(): returning main branch tag from list={tag}")
+                        return tag
+            
+            # Fallback: return first valid tag if no branch-specific match
+            for tag in tags:
+                if validate_version_format(tag):
+                    app.logger.info(f"get_version_from_git(): returning fallback tag={tag}")
+                    return tag
         
         return None
     except subprocess.TimeoutExpired:
