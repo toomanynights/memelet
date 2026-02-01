@@ -4,70 +4,100 @@ Initialize the Memelet database
 """
 import sqlite3
 import re
+import subprocess
+import shutil
 from pathlib import Path
 from config import get_db_path, get_install_dir, get_instance_path
 
 # DB_PATH removed - now using dynamic get_db_path() for multi-tenant support
 
-def get_version_from_changelog():
+def find_git_executable():
     """
-    Read version from CHANGELOG.md file.
-    Looks for the first version entry in standard changelog formats:
-    - ## [1.2.3] - 2024-01-01
-    - ## 1.2.3 - 2024-01-01
-    - # Version 1.2.3
-    
-    Returns version string (e.g., "1.2.3") or None if not found.
+    Find git executable in common locations or PATH.
+    Returns full path to git or None if not found.
     """
-    # Try to find CHANGELOG.md in multiple locations
-    possible_paths = [
-        Path(__file__).parent / 'CHANGELOG.md',  # Branch/shared directory (multi-tenant) or install dir (single-tenant)
-        Path(get_install_dir()) / 'CHANGELOG.md',  # Installation directory (single-tenant)
-        Path(get_instance_path()) / 'CHANGELOG.md',  # Instance directory (multi-tenant)
-    ]
+    # Try common locations first (most reliable)
+    common_git_paths = ['/usr/bin/git', '/usr/local/bin/git', '/bin/git']
+    for git_path in common_git_paths:
+        if Path(git_path).exists():
+            return git_path
     
-    # Also check HELPER_SCRIPTS_DIR if available (points to branch/shared in multi-tenant)
-    try:
-        from flask import current_app, has_app_context
-        if has_app_context():
-            helper_scripts_dir = current_app.config.get('HELPER_SCRIPTS_DIR')
-            if helper_scripts_dir:
-                possible_paths.insert(0, Path(helper_scripts_dir) / 'CHANGELOG.md')
-    except Exception:
-        pass
-    
-    for changelog_path in possible_paths:
-        if changelog_path.exists():
-            try:
-                with open(changelog_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    
-                # Try to match various changelog formats
-                # Format: ## [1.2.3] - 2024-01-01
-                match = re.search(r'##\s*\[(\d+\.\d+\.\d+)\]', content)
-                if match:
-                    return match.group(1)
-                
-                # Format: ## 1.2.3 - 2024-01-01
-                match = re.search(r'##\s*(\d+\.\d+\.\d+)\s*-', content)
-                if match:
-                    return match.group(1)
-                
-                # Format: # Version 1.2.3
-                match = re.search(r'#\s*Version\s*(\d+\.\d+\.\d+)', content, re.IGNORECASE)
-                if match:
-                    return match.group(1)
-                
-                # Format: ## 1.2.3 (without date)
-                match = re.search(r'##\s*(\d+\.\d+\.\d+)', content)
-                if match:
-                    return match.group(1)
-                    
-            except Exception as e:
-                # If we can't read the file, continue to next path
-                continue
+    # Fallback to checking PATH
+    git_cmd = shutil.which('git')
+    if git_cmd:
+        return git_cmd
     
     return None
+
+def validate_version_format(version):
+    """
+    Validate version format (semver: X.Y.Z, optionally with suffix like -beta).
+    Returns True if valid, False otherwise.
+    """
+    if not version:
+        return False
+    # Extract base version (without suffix) for validation
+    base_version = version.split('-')[0]
+    pattern = r'^\d+\.\d+\.\d+$'
+    return bool(re.match(pattern, base_version))
+
+def get_version_from_git():
+    """
+    Detect version from git tags using 'git describe --tags'.
+    Works for both exact tag matches and commits after tags.
+    Returns version string (e.g., "0.8.7" or "0.8.7-beta") or None if not found.
+    """
+    try:
+        install_dir = Path(get_install_dir())
+        git_dir = install_dir / '.git'
+        
+        if not git_dir.exists():
+            return None
+        
+        # Find git executable
+        git_cmd = find_git_executable()
+        if not git_cmd:
+            return None
+        
+        # Try to get exact tag match first (if HEAD is on a tag)
+        result = subprocess.run(
+            [git_cmd, 'describe', '--tags', '--exact-match'],
+            cwd=install_dir,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            tag = result.stdout.strip()
+            # Remove 'v' prefix if present (e.g., 'v0.8.7' -> '0.8.7')
+            version = tag.lstrip('v')
+            if validate_version_format(version):
+                return version
+        
+        # If not on exact tag, try to get nearest tag
+        result = subprocess.run(
+            [git_cmd, 'describe', '--tags'],
+            cwd=install_dir,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            describe_output = result.stdout.strip()
+            # git describe output format: "v0.8.7" or "v0.8.7-5-gabc1234"
+            # Extract the tag part (before first hyphen if it's a commit count)
+            tag_part = describe_output.split('-')[0]
+            version = tag_part.lstrip('v')
+            if validate_version_format(version):
+                return version
+        
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+    except Exception:
+        return None
 
 def init_database():
     """Create the database and tables if they don't exist"""
@@ -184,10 +214,10 @@ def init_database():
         cursor.execute("INSERT INTO settings (key, value) VALUES ('privacy_mode', 'private')")
     
     # Initialize version tracking settings
-    # current_version: Read from CHANGELOG.md if available, otherwise None
+    # current_version: Try to detect from git tags, otherwise None
     cursor.execute("SELECT value FROM settings WHERE key = 'current_version'")
     if cursor.fetchone() is None:
-        version = get_version_from_changelog()
+        version = get_version_from_git()
         cursor.execute("INSERT INTO settings (key, value) VALUES ('current_version', ?)", 
                       (version if version else None,))
     
@@ -230,7 +260,7 @@ def init_database():
     conn.close()
     
     # Get version info for display
-    version = get_version_from_changelog()
+    version = get_version_from_git()
     
     print(f"✅ Database initialized at: {Path(db_path).resolve()}")
     print(f"📊 Tables ensured:")
@@ -241,9 +271,9 @@ def init_database():
     print("   - settings: key, value (including version tracking)")
     print("   - users: id, username, password_hash, created_at, updated_at")
     if version:
-        print(f"\n📦 Version detected from CHANGELOG.md: {version}")
+        print(f"\n📦 Version detected from git tags: {version}")
     else:
-        print(f"\n📦 No version found in CHANGELOG.md (will be set to NULL)")
+        print(f"\n📦 No version detected from git tags (will be set to NULL)")
     print(f"\n🔐 Default login credentials: username='admin', password='admin'")
 
 if __name__ == "__main__":

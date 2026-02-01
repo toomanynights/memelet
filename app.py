@@ -32,7 +32,6 @@ from config import (
     get_install_dir,
 )
 import atexit
-from init_database import get_version_from_changelog
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
@@ -147,10 +146,10 @@ def load_user(user_id):
 # Helper function to ensure version settings exist in database
 def _ensure_version_settings(cursor):
     """Ensure version tracking settings exist in the database"""
-    # current_version: Read from CHANGELOG.md if available, otherwise None
+    # current_version: Try to detect from git tags, otherwise None
     cursor.execute("SELECT value FROM settings WHERE key = 'current_version'")
     if cursor.fetchone() is None:
-        version = get_version_from_changelog()
+        version = get_version_from_git()
         cursor.execute("INSERT INTO settings (key, value) VALUES ('current_version', ?)", 
                       (version if version else None,))
     
@@ -579,6 +578,66 @@ def find_git_executable():
     app.logger.warning("Git executable not found in common locations or PATH")
     return None
 
+def get_version_from_git():
+    """
+    Detect version from git tags using 'git describe --tags'.
+    Works for both exact tag matches and commits after tags.
+    Returns version string (e.g., "0.8.7" or "0.8.7-beta") or None if not found.
+    """
+    try:
+        install_dir = Path(get_install_dir())
+        git_dir = install_dir / '.git'
+        
+        if not git_dir.exists():
+            return None
+        
+        # Find git executable
+        git_cmd = find_git_executable()
+        if not git_cmd:
+            return None
+        
+        # Try to get exact tag match first (if HEAD is on a tag)
+        result = subprocess.run(
+            [git_cmd, 'describe', '--tags', '--exact-match'],
+            cwd=install_dir,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            tag = result.stdout.strip()
+            # Remove 'v' prefix if present (e.g., 'v0.8.7' -> '0.8.7')
+            version = tag.lstrip('v')
+            if validate_version_format(version):
+                return version
+        
+        # If not on exact tag, try to get nearest tag
+        result = subprocess.run(
+            [git_cmd, 'describe', '--tags'],
+            cwd=install_dir,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            describe_output = result.stdout.strip()
+            # git describe output format: "v0.8.7" or "v0.8.7-5-gabc1234"
+            # Extract the tag part (before first hyphen if it's a commit count)
+            tag_part = describe_output.split('-')[0]
+            version = tag_part.lstrip('v')
+            if validate_version_format(version):
+                return version
+        
+        return None
+    except subprocess.TimeoutExpired:
+        app.logger.warning("Timeout getting version from git")
+        return None
+    except Exception as e:
+        app.logger.debug(f"Could not get version from git: {e}")
+        return None
+
 def get_dev_commit_info():
     """
     Get current commit hash and check if there are new commits available on dev branch.
@@ -950,9 +1009,8 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                         'restart_required': False
                     }
                 
-                # Update version from CHANGELOG.md if available
-                from init_database import get_version_from_changelog
-                new_version = get_version_from_changelog()
+                # Update version from git tags if available
+                new_version = get_version_from_git()
                 if new_version:
                     set_current_version(new_version)
                 
@@ -2834,25 +2892,23 @@ def get_version_info():
                     # Git repo exists but git command not available
                     current_version = "Git command not available"
                 else:
-                    # Git repo exists but commit info failed - use CHANGELOG as fallback
+                    # Git repo exists but commit info failed - try git tag detection
                     current_version = get_current_version()
                     if not current_version:
-                        from init_database import get_version_from_changelog
-                        changelog_version = get_version_from_changelog()
-                        if changelog_version:
-                            set_current_version(changelog_version)
-                            current_version = changelog_version
+                        git_version = get_version_from_git()
+                        if git_version:
+                            set_current_version(git_version)
+                            current_version = git_version
         else:
-            # For other branches, sync version from CHANGELOG.md if not set
+            # For other branches, sync version from git tags if not set
             current_version = get_current_version()
             if not current_version:
-                # Try to get version from CHANGELOG.md and update database
-                from init_database import get_version_from_changelog
-                changelog_version = get_version_from_changelog()
-                if changelog_version:
-                    set_current_version(changelog_version)
-                    current_version = changelog_version
-                    app.logger.info(f"Synced version from CHANGELOG.md: {changelog_version}")
+                # Try to get version from git tags and update database
+                git_version = get_version_from_git()
+                if git_version:
+                    set_current_version(git_version)
+                    current_version = git_version
+                    app.logger.info(f"Synced version from git tags: {git_version}")
         
         available_version = get_available_version()
         update_info = check_for_updates()
