@@ -3019,6 +3019,19 @@ def get_version_info():
                             if db_branch != git_branch:
                                 set_current_branch(git_branch)
                                 app.logger.info(f"Synced branch from config.json: {git_branch}")
+                                
+                                # When branch changes, clear current_version to force re-detection from git tags
+                                try:
+                                    conn = get_db_connection()
+                                    cursor = conn.cursor()
+                                    cursor.execute(
+                                        "UPDATE settings SET value = NULL WHERE key = 'current_version'"
+                                    )
+                                    conn.commit()
+                                    conn.close()
+                                    app.logger.info(f"Cleared current_version to force re-detection for branch {git_branch}")
+                                except Exception as e:
+                                    app.logger.warning(f"Could not clear current_version: {e}")
             except Exception as e:
                 app.logger.warning(f"Could not sync branch from config.json: {e}")
         
