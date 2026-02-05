@@ -63,20 +63,20 @@ _hourly_scan_function = None
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
     from apscheduler.triggers.cron import CronTrigger
-    
+
     scheduler = BackgroundScheduler()
-    
-        def run_hourly_scan():
-            """Trigger hourly scan in standalone mode only"""
-            # Check at runtime if we're in multi-tenant mode
-            if 'INSTANCE_NAME' in app.config or 'INSTANCE_NAME' in os.environ:
-                return  # Skip scan in multi-tenant mode
-            
-            try:
+
+    def run_hourly_scan():
+        """Trigger hourly scan in standalone mode only"""
+        # Check at runtime if we're in multi-tenant mode
+        if 'INSTANCE_NAME' in app.config or 'INSTANCE_NAME' in os.environ:
+            return  # Skip scan in multi-tenant mode
+
+        try:
             script_dir = get_script_dir()
             log_dir = get_log_dir()
             shell_script = os.path.join(script_dir, 'run_scan.sh')
-            
+
             if os.path.exists(shell_script):
                 env = os.environ.copy()
                 env['SCRIPT_DIR'] = script_dir
@@ -87,12 +87,12 @@ try:
                 env['VENV_DIR'] = get_venv_dir()
                 # Ensure PATH includes standard locations for bash
                 env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-                
+
                 # Use full path to bash to avoid PATH issues in systemd
                 bash_path = '/bin/bash'
                 if not os.path.exists(bash_path):
                     bash_path = '/usr/bin/bash'
-                
+
                 # Execute with bash explicitly to ensure it runs
                 subprocess.Popen(
                     [bash_path, shell_script],
@@ -104,22 +104,22 @@ try:
                 app.logger.info("Hourly scan triggered")
         except Exception as e:
             app.logger.error(f"Failed to trigger hourly scan: {e}")
-        
-        # Store function globally for API access
-        _hourly_scan_function = run_hourly_scan
-        
-        # Schedule hourly scan at :00 of every hour
-        scheduler.add_job(
-            func=run_hourly_scan,
-            trigger=CronTrigger.from_crontab('0 * * * *'),
-            id='hourly_scan',
-            name='Hourly Memelet Scan',
-            replace_existing=True
-        )
-        
-        scheduler.start()
-        atexit.register(lambda: scheduler.shutdown())
-        app.logger.info("Automatic hourly scanning enabled (will skip in multi-tenant mode)")
+
+    # Store function globally for API access
+    _hourly_scan_function = run_hourly_scan
+
+    # Schedule hourly scan at :00 of every hour
+    scheduler.add_job(
+        func=run_hourly_scan,
+        trigger=CronTrigger.from_crontab('0 * * * *'),
+        id='hourly_scan',
+        name='Hourly Memelet Scan',
+        replace_existing=True
+    )
+
+    scheduler.start()
+    atexit.register(lambda: scheduler.shutdown())
+    app.logger.info("Automatic hourly scanning enabled (will skip in multi-tenant mode)")
 except Exception as e:
     app.logger.error(f"Failed to set up scheduler: {e}")
     import traceback
