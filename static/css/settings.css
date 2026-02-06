@@ -322,6 +322,79 @@ h2 {
     cursor: not-allowed;
 }
 
+/* Version Info Styling */
+.version-info-container {
+    margin-top: 15px;
+}
+
+.version-info-item {
+    margin-bottom: 12px;
+}
+
+.version-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.version-info-label {
+    font-weight: 600;
+    color: #374151;
+}
+
+.version-info-value {
+    color: #6b7280;
+}
+
+.branch-selector {
+    padding: 4px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    background-color: white;
+    color: #374151;
+    font-size: 0.9rem;
+    cursor: pointer;
+    margin-left: 12px;
+    min-width: 120px;
+    max-width: 150px;
+}
+
+.branch-selector:hover {
+    border-color: #9ca3af;
+}
+
+.branch-selector:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.branch-selector:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+#branch-change-message {
+    margin-top: 8px;
+    font-size: 0.85rem;
+}
+
+.update-status-container {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.update-status-message {
+    color: #059669;
+    font-weight: 500;
+}
+
+.update-button {
+    margin-top: 12px;
+    width: 100%;
+}
+
 /* Disk Usage Styling */
 .disk-usage-container {
     margin-top: 15px;

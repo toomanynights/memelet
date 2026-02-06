@@ -3000,6 +3000,355 @@ def initiate_update():
             'error': str(e)
         }), 500
 
+@app.route('/api/settings/branches', methods=['GET'])
+@login_required
+def get_available_branches():
+    """Get list of available branches (single-tenant only)"""
+    try:
+        # Only available in single-tenant mode
+        if 'INSTANCE_NAME' in app.config:
+            return jsonify({
+                'success': False,
+                'error': 'Branch switching is only available in single-tenant mode'
+            }), 400
+        
+        # Try to detect branches from local git repository
+        git_cmd = find_git_executable()
+        if not git_cmd:
+            return jsonify({
+                'success': False,
+                'error': 'Git command not available'
+            }), 500
+        
+        install_dir = Path(get_install_dir())
+        git_dir = install_dir / '.git'
+        
+        if not git_dir.exists():
+            return jsonify({
+                'success': False,
+                'error': 'Not a git repository'
+            }), 500
+        
+        # Get list of remote branches
+        try:
+            result = subprocess.run(
+                [git_cmd, 'branch', '-r'],
+                cwd=str(install_dir),
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode != 0:
+                app.logger.error(f"git branch -r failed: {result.stderr}")
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to list branches'
+                }), 500
+            
+            # Parse branch names (format: "  origin/main")
+            branches = []
+            for line in result.stdout.strip().split('\n'):
+                line = line.strip()
+                if line and 'origin/' in line and '->' not in line:  # Skip HEAD pointer
+                    branch_name = line.split('origin/')[-1]
+                    branches.append(branch_name)
+            
+            # If no remote branches found, fallback to local branches
+            if not branches:
+                result = subprocess.run(
+                    [git_cmd, 'branch'],
+                    cwd=str(install_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                
+                if result.returncode == 0:
+                    for line in result.stdout.strip().split('\n'):
+                        line = line.strip().lstrip('* ').strip()
+                        if line:
+                            branches.append(line)
+            
+            # Default branches if nothing found
+            if not branches:
+                branches = ['main', 'dev', 'beta']
+            
+            # Remove duplicates and sort
+            branches = sorted(set(branches))
+            
+            return jsonify({
+                'success': True,
+                'branches': branches,
+                'current_branch': get_current_branch()
+            })
+        
+        except subprocess.TimeoutExpired:
+            app.logger.error("Git command timed out")
+            return jsonify({
+                'success': False,
+                'error': 'Git command timed out'
+            }), 500
+        except Exception as e:
+            app.logger.error(f"Error listing branches: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+    
+    except Exception as e:
+        app.logger.error(f"Error getting branches: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/settings/change-branch', methods=['POST'])
+@login_required
+def change_branch():
+    """Change git branch (single-tenant only, requires restart)"""
+    try:
+        # Only available in single-tenant mode
+        if 'INSTANCE_NAME' in app.config:
+            return jsonify({
+                'success': False,
+                'error': 'Branch switching is only available in single-tenant mode. Use Memelord dashboard to switch branches.'
+            }), 400
+        
+        data = request.get_json()
+        new_branch = data.get('branch', '').strip()
+        
+        if not new_branch:
+            return jsonify({
+                'success': False,
+                'error': 'Branch name is required'
+            }), 400
+        
+        # Validate branch name (basic check)
+        if not re.match(r'^[a-zA-Z0-9_\-/]+$', new_branch):
+            return jsonify({
+                'success': False,
+                'error': 'Invalid branch name'
+            }), 400
+        
+        # Get current branch
+        current_branch = get_current_branch()
+        if current_branch == new_branch:
+            return jsonify({
+                'success': False,
+                'error': f'Already on branch {new_branch}'
+            }), 400
+        
+        # Try to switch branch using git
+        git_cmd = find_git_executable()
+        if not git_cmd:
+            return jsonify({
+                'success': False,
+                'error': 'Git command not available'
+            }), 500
+        
+        install_dir = Path(get_install_dir())
+        
+        try:
+            # Stash any local changes to avoid conflicts
+            result = subprocess.run(
+                [git_cmd, 'stash', 'push', '-u', '-m', f'Auto-stash before switching to {new_branch}'],
+                cwd=str(install_dir),
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            stashed = 'No local changes to save' not in result.stdout
+            if stashed:
+                app.logger.info(f"Stashed local changes before branch switch")
+            
+            # Fetch latest from origin (including tags for releases)
+            result = subprocess.run(
+                [git_cmd, 'fetch', 'origin', '--tags'],
+                cwd=str(install_dir),
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode != 0:
+                app.logger.error(f"git fetch failed: {result.stderr}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to fetch from origin: {result.stderr}'
+                }), 500
+            
+            # Force checkout the branch (discard any remaining local changes)
+            result = subprocess.run(
+                [git_cmd, 'checkout', '-f', new_branch],
+                cwd=str(install_dir),
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode != 0:
+                # Branch doesn't exist locally, create it from origin
+                result = subprocess.run(
+                    [git_cmd, 'checkout', '-b', new_branch, f'origin/{new_branch}'],
+                    cwd=str(install_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.returncode != 0:
+                    app.logger.error(f"git checkout failed: {result.stderr}")
+                    return jsonify({
+                        'success': False,
+                        'error': f'Failed to checkout branch: {result.stderr}'
+                    }), 500
+            
+            # Now update to latest code based on branch type
+            if new_branch == 'dev':
+                # For dev branch: pull latest commit
+                result = subprocess.run(
+                    [git_cmd, 'pull', '--force', 'origin', new_branch],
+                    cwd=str(install_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.returncode != 0:
+                    app.logger.warning(f"git pull failed: {result.stderr}")
+                
+                app.logger.info(f"Switched to dev branch and pulled latest commit")
+            else:
+                # For beta/main: checkout latest release tag
+                try:
+                    import requests
+                    github_repo = os.environ.get('GITHUB_REPO', 'toomanynights/memelet')
+                    
+                    # Get latest release for this branch
+                    releases_url = f'https://api.github.com/repos/{github_repo}/releases'
+                    response = requests.get(releases_url, timeout=10)
+                    
+                    if response.status_code == 200:
+                        releases = response.json()
+                        
+                        # Filter releases for this branch (beta releases have -beta suffix)
+                        if new_branch == 'beta':
+                            matching_releases = [r for r in releases if '-beta' in r.get('tag_name', '')]
+                        else:
+                            matching_releases = [r for r in releases if '-beta' not in r.get('tag_name', '')]
+                        
+                        if matching_releases:
+                            latest_release = matching_releases[0]
+                            latest_tag = latest_release.get('tag_name', '')
+                            
+                            if latest_tag:
+                                # Checkout the release tag
+                                result = subprocess.run(
+                                    [git_cmd, 'checkout', '-f', latest_tag],
+                                    cwd=str(install_dir),
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=30
+                                )
+                                
+                                if result.returncode == 0:
+                                    app.logger.info(f"Checked out release tag {latest_tag} for branch {new_branch}")
+                                else:
+                                    app.logger.warning(f"Failed to checkout tag {latest_tag}, staying on branch HEAD")
+                                    # Reset to origin branch HEAD
+                                    subprocess.run(
+                                        [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
+                                        cwd=str(install_dir),
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=30
+                                    )
+                            else:
+                                # No tag found, reset to origin branch HEAD
+                                subprocess.run(
+                                    [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
+                                    cwd=str(install_dir),
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=30
+                                )
+                        else:
+                            # No releases found for this branch, reset to origin branch HEAD
+                            app.logger.info(f"No releases found for branch {new_branch}, using branch HEAD")
+                            subprocess.run(
+                                [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
+                                cwd=str(install_dir),
+                                capture_output=True,
+                                text=True,
+                                timeout=30
+                            )
+                    else:
+                        # GitHub API failed, reset to origin branch HEAD
+                        app.logger.warning(f"GitHub API failed, using branch HEAD")
+                        subprocess.run(
+                            [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
+                            cwd=str(install_dir),
+                            capture_output=True,
+                            text=True,
+                            timeout=30
+                        )
+                except Exception as e:
+                    app.logger.warning(f"Failed to get latest release: {e}, using branch HEAD")
+                    # Reset to origin branch HEAD as fallback
+                    subprocess.run(
+                        [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
+                        cwd=str(install_dir),
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+            
+            # Update branch in database
+            set_current_branch(new_branch)
+            
+            # Clear current_version to force re-detection
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE settings SET value = NULL WHERE key = 'current_version'"
+                )
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                app.logger.warning(f"Could not clear current_version: {e}")
+            
+            app.logger.info(f"Branch changed from {current_branch} to {new_branch}")
+            
+            # Get version message based on branch type
+            if new_branch == 'dev':
+                version_msg = 'latest commit'
+            else:
+                version_msg = 'latest release'
+            
+            return jsonify({
+                'success': True,
+                'message': f'Successfully switched to branch {new_branch} ({version_msg}). Please restart the application to apply changes.',
+                'branch': new_branch,
+                'requires_restart': True
+            })
+        
+        except subprocess.TimeoutExpired:
+            app.logger.error("Git command timed out")
+            return jsonify({
+                'success': False,
+                'error': 'Git command timed out'
+            }), 500
+        except Exception as e:
+            app.logger.error(f"Error changing branch: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+    
+    except Exception as e:
+        app.logger.error(f"Error in change_branch: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/settings/version', methods=['GET'])
 @login_required
 def get_version_info():

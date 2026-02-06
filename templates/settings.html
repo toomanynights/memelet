@@ -52,30 +52,36 @@
                 Loading version information...
             </p>
             <div class="version-info-container" id="version-info-container" style="display: none;">
-                <div class="version-info-item" style="margin-bottom: 12px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 600; color: #374151;">Current Version:</span>
-                        <span id="current-version-display" style="color: #6b7280;">-</span>
+                <div class="version-info-item">
+                    <div class="version-info-row">
+                        <span class="version-info-label">Current Version:</span>
+                        <span id="current-version-display" class="version-info-value">-</span>
                     </div>
                 </div>
-                <div class="version-info-item" style="margin-bottom: 12px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 600; color: #374151;">Branch:</span>
-                        <span id="current-branch-display" style="color: #6b7280;">-</span>
+                <div class="version-info-item">
+                    <div class="version-info-row">
+                        <span class="version-info-label">Branch:</span>
+                        <!-- Read-only text for multi-tenant -->
+                        <span id="current-branch-display" class="version-info-value">-</span>
+                        <!-- Dropdown for single-tenant -->
+                        <select id="branch-selector" class="branch-selector" style="display: none;">
+                            <option value="">Loading...</option>
+                        </select>
                     </div>
                 </div>
-                <div class="version-info-item" style="margin-bottom: 12px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 600; color: #374151;">Available Version:</span>
-                        <span id="available-version-display" style="color: #6b7280;">-</span>
+                <div id="branch-change-message" style="display: none;"></div>
+                <div class="version-info-item">
+                    <div class="version-info-row">
+                        <span class="version-info-label">Available Version:</span>
+                        <span id="available-version-display" class="version-info-value">-</span>
                     </div>
                 </div>
-                <div class="version-info-item" id="update-status-container" style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
-                    <div id="update-status-message" style="color: #059669; font-weight: 500;"></div>
+                <div class="version-info-item update-status-container" id="update-status-container" style="display: none;">
+                    <div id="update-status-message" class="update-status-message"></div>
                     <button 
                         id="update-button" 
-                        class="btn btn-primary" 
-                        style="display: none; margin-top: 12px; width: 100%;"
+                        class="btn btn-primary update-button" 
+                        style="display: none;"
                         onclick="initiateUpdate()"
                     >
                         🔄 Update Now
@@ -1275,12 +1281,126 @@
                 updateDiskUsage();
                 updateReplicateUsage();
                 loadVersionInfo();
+                loadBranches();
             });
         } else {
             // DOM is already ready
             updateDiskUsage();
             updateReplicateUsage();
             loadVersionInfo();
+            loadBranches();
+        }
+
+        // Load available branches (single-tenant only)
+        function loadBranches() {
+            fetch(`${BASE_URL}/api/settings/branches`, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    const branchDisplay = document.getElementById('current-branch-display');
+                    const branchSelector = document.getElementById('branch-selector');
+                    
+                    if (data.success) {
+                        // Single-tenant mode - show dropdown
+                        branchDisplay.style.display = 'none';
+                        branchSelector.style.display = 'block';
+                        
+                        // Populate dropdown
+                        branchSelector.innerHTML = '';
+                        data.branches.forEach(branch => {
+                            const option = document.createElement('option');
+                            option.value = branch;
+                            option.textContent = branch;
+                            if (branch === data.current_branch) {
+                                option.selected = true;
+                            }
+                            branchSelector.appendChild(option);
+                        });
+                        
+                        // Add change event listener
+                        branchSelector.onchange = function() {
+                            handleBranchChange(this.value);
+                        };
+                    } else {
+                        // Multi-tenant mode or error - show read-only text
+                        branchDisplay.style.display = 'block';
+                        branchSelector.style.display = 'none';
+                    }
+                })
+                .catch(error => {
+                    console.log('Branch switching not available:', error);
+                    // Show read-only text (multi-tenant or error)
+                    document.getElementById('current-branch-display').style.display = 'block';
+                    document.getElementById('branch-selector').style.display = 'none';
+                });
+        }
+
+        // Handle branch change
+        function handleBranchChange(newBranch) {
+            const branchSelector = document.getElementById('branch-selector');
+            const messageDiv = document.getElementById('branch-change-message');
+            
+            // Disable selector during change
+            branchSelector.disabled = true;
+            
+            // Confirm change
+            if (!confirm(`Switch to branch "${newBranch}"?\n\nThis will checkout the branch and pull latest changes. You'll need to restart the application after switching.`)) {
+                // Revert to previous selection
+                loadBranches();
+                return;
+            }
+            
+            fetch(`${BASE_URL}/api/settings/change-branch`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ branch: newBranch })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    branchSelector.disabled = false;
+                    
+                    if (data.success) {
+                        messageDiv.innerHTML = `<div class="message success">${data.message}</div>`;
+                        messageDiv.style.display = 'block';
+                        
+                        // Reload version info
+                        setTimeout(() => {
+                            loadVersionInfo();
+                        }, 1000);
+                    } else {
+                        messageDiv.innerHTML = `<div class="message error">Error: ${data.error}</div>`;
+                        messageDiv.style.display = 'block';
+                        
+                        // Revert dropdown to current branch
+                        loadBranches();
+                    }
+                    
+                    // Clear message after 8 seconds
+                    setTimeout(() => {
+                        messageDiv.style.display = 'none';
+                        messageDiv.innerHTML = '';
+                    }, 8000);
+                })
+                .catch(error => {
+                    branchSelector.disabled = false;
+                    console.error('Error changing branch:', error);
+                    messageDiv.innerHTML = `<div class="message error">Error changing branch: ${error}</div>`;
+                    messageDiv.style.display = 'block';
+                    
+                    // Revert dropdown
+                    loadBranches();
+                    
+                    setTimeout(() => {
+                        messageDiv.style.display = 'none';
+                        messageDiv.innerHTML = '';
+                    }, 5000);
+                });
         }
 
         // Version information
@@ -1313,9 +1433,11 @@
                         currentVersionDisplay.textContent = currentVersionText;
                         currentVersionDisplay.style.color = data.current_version ? '#374151' : '#9ca3af';
                         
-                        // Update branch
+                        // Update branch (if in read-only mode)
                         const branchDisplay = document.getElementById('current-branch-display');
-                        branchDisplay.textContent = data.current_branch || 'main';
+                        if (branchDisplay.style.display !== 'none') {
+                            branchDisplay.textContent = data.current_branch || 'main';
+                        }
                         
                         // Update available version
                         const availableVersionDisplay = document.getElementById('available-version-display');
@@ -1435,14 +1557,12 @@
         // Refresh Replicate usage every 10 seconds (more frequent for quota tracking)
         setInterval(updateReplicateUsage, 10000);
         
-        // Load version info on page load
-        loadVersionInfo();
-        
         // Refresh usage when page becomes visible (e.g., after processing memes)
         document.addEventListener('visibilitychange', function() {
             if (!document.hidden) {
                 updateDiskUsage();
                 updateReplicateUsage();
+                loadVersionInfo();
             }
         });
     </script>
