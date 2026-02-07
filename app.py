@@ -60,70 +60,70 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection while allowing 
 _hourly_scan_function = None
 
 # Always set up scheduler, but check INSTANCE_NAME at runtime
-try:
-    from apscheduler.schedulers.background import BackgroundScheduler
-    from apscheduler.triggers.cron import CronTrigger
-
-    scheduler = BackgroundScheduler()
-
-    def run_hourly_scan():
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        
+        scheduler = BackgroundScheduler()
+        
+        def run_hourly_scan():
         """Trigger hourly scan in standalone mode only"""
         # Check at runtime if we're in multi-tenant mode
         if 'INSTANCE_NAME' in app.config or 'INSTANCE_NAME' in os.environ:
             return  # Skip scan in multi-tenant mode
 
-        try:
-            script_dir = get_script_dir()
-            log_dir = get_log_dir()
-            shell_script = os.path.join(script_dir, 'run_scan.sh')
-
-            if os.path.exists(shell_script):
-                env = os.environ.copy()
-                env['SCRIPT_DIR'] = script_dir
-                env['LOG_DIR'] = log_dir
-                env['DB_PATH'] = get_db_path()
-                env['MEMES_DIR'] = get_memes_dir()
-                env['MEMES_URL_BASE'] = get_memes_url_base()
-                env['VENV_DIR'] = get_venv_dir()
-                # Ensure PATH includes standard locations for bash
-                env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-
-                # Use full path to bash to avoid PATH issues in systemd
-                bash_path = '/bin/bash'
-                if not os.path.exists(bash_path):
-                    bash_path = '/usr/bin/bash'
-
-                # Execute with bash explicitly to ensure it runs
-                subprocess.Popen(
-                    [bash_path, shell_script],
-                    stdout=subprocess.DEVNULL,
-                    stderr=open(os.path.join(log_dir, 'scan_errors.log'), 'a'),
-                    env=env,
-                    start_new_session=True
-                )
-                app.logger.info("Hourly scan triggered")
-        except Exception as e:
-            app.logger.error(f"Failed to trigger hourly scan: {e}")
-
-    # Store function globally for API access
-    _hourly_scan_function = run_hourly_scan
-
-    # Schedule hourly scan at :00 of every hour
-    scheduler.add_job(
-        func=run_hourly_scan,
-        trigger=CronTrigger.from_crontab('0 * * * *'),
-        id='hourly_scan',
-        name='Hourly Memelet Scan',
-        replace_existing=True
-    )
-
-    scheduler.start()
-    atexit.register(lambda: scheduler.shutdown())
+            try:
+                script_dir = get_script_dir()
+                log_dir = get_log_dir()
+                shell_script = os.path.join(script_dir, 'run_scan.sh')
+                
+                if os.path.exists(shell_script):
+                    env = os.environ.copy()
+                    env['SCRIPT_DIR'] = script_dir
+                    env['LOG_DIR'] = log_dir
+                    env['DB_PATH'] = get_db_path()
+                    env['MEMES_DIR'] = get_memes_dir()
+                    env['MEMES_URL_BASE'] = get_memes_url_base()
+                    env['VENV_DIR'] = get_venv_dir()
+                    # Ensure PATH includes standard locations for bash
+                    env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+                    
+                    # Use full path to bash to avoid PATH issues in systemd
+                    bash_path = '/bin/bash'
+                    if not os.path.exists(bash_path):
+                        bash_path = '/usr/bin/bash'
+                    
+                    # Execute with bash explicitly to ensure it runs
+                    subprocess.Popen(
+                        [bash_path, shell_script],
+                        stdout=subprocess.DEVNULL,
+                        stderr=open(os.path.join(log_dir, 'scan_errors.log'), 'a'),
+                        env=env,
+                        start_new_session=True
+                    )
+                    app.logger.info("Hourly scan triggered")
+            except Exception as e:
+                app.logger.error(f"Failed to trigger hourly scan: {e}")
+        
+        # Store function globally for API access
+        _hourly_scan_function = run_hourly_scan
+        
+        # Schedule hourly scan at :00 of every hour
+        scheduler.add_job(
+            func=run_hourly_scan,
+            trigger=CronTrigger.from_crontab('0 * * * *'),
+            id='hourly_scan',
+            name='Hourly Memelet Scan',
+            replace_existing=True
+        )
+        
+        scheduler.start()
+        atexit.register(lambda: scheduler.shutdown())
     app.logger.info("Automatic hourly scanning enabled (will skip in multi-tenant mode)")
-except Exception as e:
-    app.logger.error(f"Failed to set up scheduler: {e}")
-    import traceback
-    traceback.print_exc()
+    except Exception as e:
+        app.logger.error(f"Failed to set up scheduler: {e}")
+        import traceback
+        traceback.print_exc()
 
 # User class for Flask-Login
 class User(UserMixin):
