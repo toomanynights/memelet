@@ -18,7 +18,7 @@ Your personal meme collection manager with AI-powered descriptions.
 
 ```bash
 # Clone or download Memelet
-git clone "https://github.com/toomanynights/memelet" memelet
+git clone --recursive "https://github.com/toomanynights/memelet" memelet
 cd memelet
 
 # Run the interactive installer
@@ -201,6 +201,7 @@ memelet/
 │   └── _system/       # Thumbnails and temp files
 ├── logs/              # Application logs
 ├── static/            # Web assets
+│   └── clippy/        # Clippy.js (git submodule: toomanynights/clippy.js)
 ├── templates/         # HTML templates
 └── memelet.db         # SQLite database
 ```

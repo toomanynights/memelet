@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/meme_detail.css') }}">
     {% if clippy_agent and clippy_agent != 'none' %}
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/build/clippy.css') }}" media="all">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/src/clippy.css') }}" media="all">
     {% endif %}
     <style>
         @media (max-width: 600px) {
@@ -662,7 +662,13 @@
     </script>
     {% if clippy_agent and clippy_agent != 'none' %}
     <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
+    <!-- Clippy.js (src modules, load order matters) -->
+    <script src="{{ url_for('static', filename='clippy/src/agent.js') }}"></script>
+    <script src="{{ url_for('static', filename='clippy/src/animator.js') }}"></script>
+    <script src="{{ url_for('static', filename='clippy/src/balloon.js') }}"></script>
+    <script src="{{ url_for('static', filename='clippy/src/load.js') }}"></script>
+    <script src="{{ url_for('static', filename='clippy/src/queue.js') }}"></script>
+    <script>clippy.BASE_PATH = "{{ url_for('static', filename='clippy/agents') }}/";</script>
     <script src="{{ url_for('static', filename='js/clippy-phrases.js') }}"></script>
     <script src="{{ url_for('static', filename='js/clippy-session.js') }}"></script>
     <script src="{{ url_for('static', filename='js/clippy-debug.js') }}"></script>

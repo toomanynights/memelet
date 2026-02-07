@@ -14,7 +14,7 @@
         }
     </style>
     {% if clippy_agent and clippy_agent != 'none' %}
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/build/clippy.css') }}"
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/src/clippy.css') }}"
         media="all">
     {% endif %}
 
@@ -1359,8 +1359,13 @@
     <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
 
     {% if clippy_agent and clippy_agent != 'none' %}
-    <!-- Clippy.js -->
-    <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
+    <!-- Clippy.js (src modules, load order matters) -->
+    <script src="{{ url_for('static', filename='clippy/src/agent.js') }}"></script>
+    <script src="{{ url_for('static', filename='clippy/src/animator.js') }}"></script>
+    <script src="{{ url_for('static', filename='clippy/src/balloon.js') }}"></script>
+    <script src="{{ url_for('static', filename='clippy/src/load.js') }}"></script>
+    <script src="{{ url_for('static', filename='clippy/src/queue.js') }}"></script>
+    <script>clippy.BASE_PATH = "{{ url_for('static', filename='clippy/agents') }}/";</script>
     <!-- Clippy Phrase Management -->
     <script src="{{ url_for('static', filename='js/clippy-phrases.js') }}"></script>
     <!-- Clippy Session Management -->

@@ -153,6 +153,16 @@ def main():
     if not check_python_version():
         sys.exit(1)
     
+    # Initialize git submodules (e.g. Clippy.js)
+    print("Initializing git submodules...")
+    try:
+        subprocess.run(['git', 'submodule', 'update', '--init', '--recursive'], check=True)
+        print_success("Git submodules initialized")
+    except FileNotFoundError:
+        print_info("Git not found, skipping submodule initialization")
+    except subprocess.CalledProcessError:
+        print_info("Submodule initialization failed (not a git repo?), skipping")
+    
     # Get installation directory (current directory)
     install_dir = Path(__file__).parent.resolve()
     print_info(f"Installation directory: {install_dir}")

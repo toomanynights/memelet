@@ -15,6 +15,7 @@ A complete authorization system has been implemented for the Memelet project wit
 
 ### 1. Install Dependencies
 ```bash
+git submodule update --init --recursive  # Fetch Clippy.js
 pip install -r requirements.txt
 ```
 
