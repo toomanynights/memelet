@@ -181,6 +181,9 @@
             <div class="alert" style="background-color: #d1fae5; color: #065f46; border: 1px solid #10b981; margin-bottom: 20px;">
                 <div style="font-weight: 600; margin-bottom: 8px;">✅ Update Complete</div>
                 <div style="margin-bottom: 12px;">{{ update_message }}</div>
+                {% if backup_dir %}
+                    <div style="font-size: 0.9em; margin-top: 8px; opacity: 0.85;">📁 Previous version backed up to <code>{{ backup_dir }}</code></div>
+                {% endif %}
                 {% if restart_required %}
                     <div style="background-color: #fef3c7; color: #92400e; padding: 12px; border-radius: 6px; margin-top: 12px; border: 1px solid #f59e0b;">
                         <strong>⚠️ Restart Required:</strong> Please restart the Memelet service to complete the update, then log in again.

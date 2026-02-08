@@ -345,6 +345,7 @@ def login():
                     current_year=current_year,
                     update_complete=True,
                     update_message=result['message'],
+                    backup_dir=result.get('backup_dir'),
                     restart_required=True
                 )
             else:
@@ -1286,6 +1287,20 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
             # Clean up temp directory
             shutil.rmtree(temp_dir)
             
+            # Clean up old backup directories, keeping the 2 most recent
+            try:
+                backup_dirs = sorted(
+                    [d for d in install_dir.parent.iterdir()
+                     if d.is_dir() and d.name.startswith('memelet-backup-')],
+                    key=lambda d: d.name,
+                    reverse=True
+                )
+                for old_backup in backup_dirs[1:]:
+                    app.logger.info(f"Removing old backup: {old_backup.name}")
+                    shutil.rmtree(old_backup)
+            except Exception as cleanup_err:
+                app.logger.warning(f"Failed to clean up old backups: {cleanup_err}")
+            
             # Update version in database
             if not set_current_version(target_version):
                 app.logger.warning("Failed to update version in database, but update completed")
@@ -1293,6 +1308,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
             return {
                 'success': True,
                 'message': f'Successfully updated to version {target_version}',
+                'backup_dir': backup_dir.name,
                 'restart_required': True
             }
             
