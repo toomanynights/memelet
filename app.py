@@ -1150,6 +1150,15 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                         'message': f'Git reset failed: {result.stderr}'
                     }
                 
+                # Restore submodules (e.g. static/clippy) after hard reset
+                subprocess.run(
+                    [git_cmd, 'submodule', 'update', '--init', '--recursive'],
+                    cwd=install_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                
                 # Get new commit hash
                 result = subprocess.run(
                     [git_cmd, 'rev-parse', 'HEAD'],
@@ -1228,6 +1237,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
             clone_cmd = [
                 git_cmd, 'clone',
                 '--depth', '1',
+                '--recurse-submodules',
                 '--branch', tag,
                 f'https://github.com/{github_repo}.git',
                 str(temp_dir)
@@ -1239,6 +1249,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                 clone_cmd = [
                     git_cmd, 'clone',
                     '--depth', '1',
+                    '--recurse-submodules',
                     f'https://github.com/{github_repo}.git',
                     str(temp_dir)
                 ]
@@ -3323,6 +3334,15 @@ def change_branch():
                         text=True,
                         timeout=30
                     )
+            
+            # Restore submodules (e.g. static/clippy) after branch switch
+            subprocess.run(
+                [git_cmd, 'submodule', 'update', '--init', '--recursive'],
+                cwd=str(install_dir),
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
             
             # Update branch in database
             set_current_branch(new_branch)
