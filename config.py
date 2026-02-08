@@ -122,6 +122,11 @@ def get_disk_quota_mb():
             return None
     return None
 
+def get_contact_url():
+    """Get URL for 'Contact the dev' link.
+    Defaults to GitHub issues page; can be overridden (e.g. mailto: for hosted instances)."""
+    return get_config_value('CONTACT_URL', 'https://github.com/toomanynights/memelet/issues')
+
 def get_replicate_quota_limit():
     """Get monthly Replicate quota limit (returns None if not set)."""
     quota = get_config_value('REPLICATE_QUOTA_LIMIT')

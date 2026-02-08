@@ -30,6 +30,7 @@ from config import (
     get_replicate_quota_limit,
     get_replicate_quota_used,
     get_install_dir,
+    get_contact_url,
 )
 import atexit
 
@@ -1630,7 +1631,8 @@ def index():
         show_pagination=total_pages > 1,
         clippy_agent=get_clippy_agent(),
         is_public_mode=is_public_mode(),
-        base_url=base_url
+        base_url=base_url,
+        contact_url=get_contact_url()
     )
 
 @app.route('/meme/<int:meme_id>', methods=['GET', 'POST'])

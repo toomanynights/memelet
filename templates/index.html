@@ -40,6 +40,9 @@
                     {% else %}
                     <a href="{{ base_url }}/login"><span class="dropdown-icon">🔑</span> Sign In</a>
                     {% endif %}
+                    {% if contact_url %}
+                    <a href="{{ contact_url }}" target="_blank"><span class="dropdown-icon">💬</span> Contact the Dev</a>
+                    {% endif %}
                 </div>
             </div>
             <h1><img src="{{ url_for('static', filename='logo.png') }}" alt="Memelet"
