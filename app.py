@@ -2855,7 +2855,9 @@ def get_clippy_agent_setting():
 @login_required
 def set_clippy_agent_setting():
     """Save Clippy agent selection"""
-    data = request.get_json()
+    data = request.get_json(force=True, silent=True)
+    if not data:
+        return jsonify({'success': False, 'error': 'Invalid request body'}), 400
     agent_form = data.get('agent_form', 'none')
     
     # Validate agent_form (should be 'none' or a valid agent name)
@@ -3147,9 +3149,11 @@ def change_branch():
         install_dir = Path(get_install_dir())
         
         try:
-            # Stash any local changes to avoid conflicts
+            # Stash any local changes to tracked files only to avoid conflicts
+            # IMPORTANT: Do NOT use -u or -a flags — those stash untracked/ignored files
+            # which includes user-uploaded memes in files/
             result = subprocess.run(
-                [git_cmd, 'stash', 'push', '-u', '-m', f'Auto-stash before switching to {new_branch}'],
+                [git_cmd, 'stash', 'push', '-m', f'Auto-stash before switching to {new_branch}'],
                 cwd=str(install_dir),
                 capture_output=True,
                 text=True,
@@ -3158,7 +3162,7 @@ def change_branch():
             
             stashed = 'No local changes to save' not in result.stdout
             if stashed:
-                app.logger.info(f"Stashed local changes before branch switch")
+                app.logger.info(f"Stashed local tracked changes before branch switch")
             
             # Fetch latest from origin (including tags for releases)
             result = subprocess.run(

@@ -17,7 +17,11 @@ logs/
 # Output
 output/
 
-# System folders (ignore contents but keep directory structure)
+# User data - ignore everything in files/ except directory structure
+files/*
+!files/_albums/
+!files/_system/
+!files/.gitkeep
 files/_albums/*
 !files/_albums/.gitkeep
 files/_system/temp/*
