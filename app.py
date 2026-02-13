@@ -1324,12 +1324,13 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                 app.logger.info(f"Install dir: {install_dir}, Git cmd: {git_cmd}")
                 
                 # Ensure PATH includes standard locations for git submodule dependencies (sed, basename, uname, etc.)
-                env = os.environ.copy()
+                # git-submodule is a shell script that needs these utilities in PATH
+                env = dict(os.environ)
                 standard_paths = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-                if 'PATH' in env:
-                    env['PATH'] = f"{standard_paths}:{env['PATH']}"
-                else:
-                    env['PATH'] = standard_paths
+                env['PATH'] = f"{standard_paths}:{env.get('PATH', '')}"
+                # Also ensure we have a proper shell environment
+                if 'SHELL' not in env:
+                    env['SHELL'] = '/bin/sh'
                 
                 # Check submodule status before restore
                 status_result = subprocess.run(
@@ -1342,12 +1343,14 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                 )
                 app.logger.info(f"Submodule status before restore: {status_result.stdout}")
                 
+                # Use shell=True with explicit PATH to ensure git-submodule script can find utilities
                 result = subprocess.run(
-                    [git_cmd, 'submodule', 'update', '--init', '--recursive'],
+                    f'export PATH="{standard_paths}:$PATH" && {git_cmd} submodule update --init --recursive',
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
                     timeout=60,
+                    shell=True,
                     env=env
                 )
                 app.logger.info(f"Submodule update stdout: {result.stdout}")
@@ -1375,19 +1378,21 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                     # Try deinit and reinit
                     app.logger.info("Attempting submodule deinit/reinit...")
                     deinit_result = subprocess.run(
-                        [git_cmd, 'submodule', 'deinit', '-f', 'static/clippy'],
+                        f'export PATH="{standard_paths}:$PATH" && {git_cmd} submodule deinit -f static/clippy',
                         cwd=install_dir,
                         capture_output=True,
                         text=True,
                         timeout=30,
+                        shell=True,
                         env=env
                     )
                     reinit_result = subprocess.run(
-                        [git_cmd, 'submodule', 'update', '--init', '--recursive', 'static/clippy'],
+                        f'export PATH="{standard_paths}:$PATH" && {git_cmd} submodule update --init --recursive static/clippy',
                         cwd=install_dir,
                         capture_output=True,
                         text=True,
                         timeout=60,
+                        shell=True,
                         env=env
                     )
                     app.logger.info(f"Reinit stdout: {reinit_result.stdout}")
@@ -3577,12 +3582,13 @@ def change_branch():
             app.logger.info(f"Install dir: {install_dir}, Git cmd: {git_cmd}")
             
             # Ensure PATH includes standard locations for git submodule dependencies (sed, basename, uname, etc.)
-            env = os.environ.copy()
+            # git-submodule is a shell script that needs these utilities in PATH
+            env = dict(os.environ)
             standard_paths = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-            if 'PATH' in env:
-                env['PATH'] = f"{standard_paths}:{env['PATH']}"
-            else:
-                env['PATH'] = standard_paths
+            env['PATH'] = f"{standard_paths}:{env.get('PATH', '')}"
+            # Also ensure we have a proper shell environment
+            if 'SHELL' not in env:
+                env['SHELL'] = '/bin/sh'
             
             # Check submodule status before restore
             status_result = subprocess.run(
@@ -3595,12 +3601,14 @@ def change_branch():
             )
             app.logger.info(f"Submodule status before restore: {status_result.stdout}")
             
+            # Use shell=True with explicit PATH to ensure git-submodule script can find utilities
             result = subprocess.run(
-                [git_cmd, 'submodule', 'update', '--init', '--recursive'],
+                f'export PATH="{standard_paths}:$PATH" && {git_cmd} submodule update --init --recursive',
                 cwd=str(install_dir),
                 capture_output=True,
                 text=True,
                 timeout=60,
+                shell=True,
                 env=env
             )
             app.logger.info(f"Submodule update stdout: {result.stdout}")
