@@ -1320,13 +1320,21 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                     }
                 
                 # Restore submodules (e.g. static/clippy) after hard reset
-                subprocess.run(
+                app.logger.info("Restoring submodules after hard reset...")
+                result = subprocess.run(
                     [git_cmd, 'submodule', 'update', '--init', '--recursive'],
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
                     timeout=60
                 )
+                if result.returncode != 0:
+                    app.logger.error(f"Submodule update failed: {result.stderr}")
+                    return {
+                        'success': False,
+                        'message': f'Failed to restore submodules: {result.stderr}'
+                    }
+                app.logger.info("Submodules restored successfully")
                 
                 # Get new commit hash
                 result = subprocess.run(
@@ -3406,9 +3414,9 @@ def change_branch():
             
             # Now update to latest code based on branch type
             if new_branch == 'dev':
-                # For dev branch: pull latest commit
+                # For dev branch: reset to latest origin/dev (matching perform_update pattern)
                 result = subprocess.run(
-                    [git_cmd, 'pull', '--force', 'origin', new_branch],
+                    [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
                     cwd=str(install_dir),
                     capture_output=True,
                     text=True,
@@ -3416,9 +3424,9 @@ def change_branch():
                 )
                 
                 if result.returncode != 0:
-                    app.logger.warning(f"git pull failed: {result.stderr}")
-                
-                app.logger.info(f"Switched to dev branch and pulled latest commit")
+                    app.logger.warning(f"git reset failed: {result.stderr}")
+                else:
+                    app.logger.info(f"Switched to dev branch and reset to latest commit")
             else:
                 # For beta/main: checkout latest release tag
                 try:
@@ -3505,13 +3513,21 @@ def change_branch():
                     )
             
             # Restore submodules (e.g. static/clippy) after branch switch
-            subprocess.run(
+            app.logger.info("Restoring submodules after branch switch...")
+            result = subprocess.run(
                 [git_cmd, 'submodule', 'update', '--init', '--recursive'],
                 cwd=str(install_dir),
                 capture_output=True,
                 text=True,
                 timeout=60
             )
+            if result.returncode != 0:
+                app.logger.error(f"Submodule update failed: {result.stderr}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to restore submodules: {result.stderr}'
+                }), 500
+            app.logger.info("Submodules restored successfully")
             
             # Update branch in database
             set_current_branch(new_branch)
