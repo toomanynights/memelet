@@ -238,6 +238,12 @@ def main():
     replicate_token = get_input("Replicate API token (optional)", "")
     config['replicate_token'] = replicate_token
     
+    # Admin username
+    print("\n--- Admin Account ---\n")
+    print_info("Set the username for the admin account")
+    admin_username = get_input("Admin username", "admin")
+    config['admin_username'] = admin_username
+    
     # Confirm configuration
     print_header("Configuration Summary")
     print(f"Install directory: {config['install_dir']}")
@@ -303,15 +309,19 @@ def main():
         print("Initializing database...")
         try:
             # Load env vars for init_database
+            env = os.environ.copy()
             with open(env_path) as f:
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith('#') and '=' in line:
                         key, value = line.split('=', 1)
-                        os.environ[key] = value
+                        env[key] = value
+            
+            # Pass admin username to init_database
+            env['INSTANCE_USERNAME'] = config['admin_username']
             
             # Run init_database.py
-            subprocess.run([sys.executable, 'init_database.py'], check=True)
+            subprocess.run([sys.executable, 'init_database.py'], check=True, env=env)
             print_success("Database initialized")
         except Exception as e:
             print_error(f"Failed to initialize database: {e}")
@@ -352,7 +362,7 @@ Next steps:
    {config['base_url']}
 
 3. Default login credentials:
-   Username: admin
+   Username: {config['admin_username']}
    Password: admin
    (Change this in Settings after first login!)
 

@@ -185,6 +185,19 @@ Memelet uses Replicate's OpenAI GPT-4.1-mini model for AI analysis.
    - `.env` file: `REPLICATE_API_TOKEN=your_token`
    - Web UI: Settings → Replicate API Key
 
+## Secure Token Authentication
+
+Memelet includes a secure token validation system (`validate_secure_token()`) that can be used for various authentication and verification purposes:
+
+- **Auto-login tokens**: Seamless login from external services (e.g., multi-tenant setups)
+- **Password reset tokens**: Secure password reset links
+- **Email verification tokens**: Verify user email addresses
+- **Magic link login**: Passwordless authentication
+
+Tokens are HMAC-signed, time-limited, and use constant-time comparison to prevent timing attacks. The system uses `AUTO_LOGIN_SECRET` (or falls back to `SECRET_KEY`) for token validation.
+
+**Note:** For multi-tenant deployments, ensure `AUTO_LOGIN_SECRET` matches between the coordinator and instances for auto-login to work.
+
 ## Directory Structure
 
 ```

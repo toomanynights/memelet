@@ -218,11 +218,32 @@
                 <div style="margin-bottom: 15px;">
                     <label for="username-display" style="display: block; margin-bottom: 5px; font-weight: 500;">Your
                         Login</label>
-                    <input type="text" id="username-display" value="{{ username }}" readonly
-                        style="width: 400px; max-width: 100%; padding: 10px; background: #f7fafc; cursor: not-allowed; color: #4a5568;">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" id="username-display" value="{{ username }}" readonly
+                            style="width: 400px; max-width: 100%; padding: 10px; background: #f7fafc; cursor: not-allowed; color: #4a5568;">
+                        <button type="button" class="btn" id="show-username-fields-btn"
+                            onclick="showUsernameFields()">✏️ Change Username</button>
+                    </div>
                 </div>
+                
+                <div id="username-fields"
+                    style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                    <div style="margin-bottom: 15px;">
+                        <label for="new-username" style="display: block; margin-bottom: 5px; font-weight: 500;">New Username</label>
+                        <input type="text" id="new-username" placeholder="Enter new username (3-20 characters, lowercase letters and numbers only)"
+                            style="width: 400px; max-width: 100%; padding: 10px;">
+                        <p style="margin-top: 5px; font-size: 0.85rem; color: #666;">Username must be 3-20 characters, lowercase letters and numbers only</p>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="btn btn-primary" onclick="submitUsernameChange()">💾 Save New
+                            Username</button>
+                        <button type="button" class="btn" onclick="hideUsernameFields()">Cancel</button>
+                    </div>
+                </div>
+                <div id="username-message" style="margin-top: 10px;"></div>
+                
                 <button type="button" class="btn btn-primary" id="show-password-fields-btn"
-                    onclick="showPasswordFields()">🔒 Change Password</button>
+                    onclick="showPasswordFields()" style="margin-top: 15px;">🔒 Change Password</button>
 
                 <div id="password-fields"
                     style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
@@ -951,6 +972,107 @@
                     container.innerHTML = '<div style="color: red; padding: 10px;">Error loading agents. Please refresh the page.</div>';
                 }
             });
+
+        // Show username change fields
+        function showUsernameFields() {
+            document.getElementById('username-fields').style.display = 'block';
+            document.getElementById('show-username-fields-btn').style.display = 'none';
+            document.getElementById('new-username').focus();
+        }
+
+        // Hide username change fields
+        function hideUsernameFields() {
+            document.getElementById('username-fields').style.display = 'none';
+            document.getElementById('show-username-fields-btn').style.display = 'inline-block';
+            // Clear fields
+            document.getElementById('new-username').value = '';
+            // Clear message
+            document.getElementById('username-message').innerHTML = '';
+        }
+
+        // Username change function
+        function submitUsernameChange() {
+            const newUsername = document.getElementById('new-username').value.trim().toLowerCase();
+            const messageDiv = document.getElementById('username-message');
+
+            // Clear previous messages
+            messageDiv.innerHTML = '';
+            messageDiv.style.display = 'none';
+
+            // Validation
+            if (!newUsername) {
+                messageDiv.innerHTML = '<div class="message error">Username is required</div>';
+                messageDiv.style.display = 'block';
+                return;
+            }
+
+            if (!/^[a-z0-9]+$/.test(newUsername)) {
+                messageDiv.innerHTML = '<div class="message error">Username must contain only lowercase letters and numbers</div>';
+                messageDiv.style.display = 'block';
+                return;
+            }
+
+            if (newUsername.length < 3 || newUsername.length > 20) {
+                messageDiv.innerHTML = '<div class="message error">Username must be 3-20 characters</div>';
+                messageDiv.style.display = 'block';
+                return;
+            }
+
+            // Send request
+            fetch(`${BASE_URL}/api/settings/change-username`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    new_username: newUsername
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Show success message
+                        messageDiv.innerHTML = '<div class="message success" style="transition: opacity 0.5s;">' + data.message + '</div>';
+                        messageDiv.style.display = 'block';
+
+                        // Update displayed username
+                        document.getElementById('username-display').value = data.new_username;
+
+                        // Wait 2 seconds, then fade out and hide fields
+                        setTimeout(() => {
+                            const successMsg = messageDiv.querySelector('.message.success');
+                            if (successMsg) {
+                                successMsg.style.opacity = '0';
+                                // After fade completes, hide everything
+                                setTimeout(() => {
+                                    hideUsernameFields();
+                                    messageDiv.style.display = 'none';
+                                }, 500);
+                            }
+                        }, 2000);
+                    } else {
+                        messageDiv.innerHTML = '<div class="message error">' + data.error + '</div>';
+                        messageDiv.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    messageDiv.innerHTML = '<div class="message error">An error occurred. Please try again.</div>';
+                    messageDiv.style.display = 'block';
+                });
+        }
+
+        // Allow Enter key to submit username change
+        document.addEventListener('DOMContentLoaded', function() {
+            const usernameInput = document.getElementById('new-username');
+            if (usernameInput) {
+                usernameInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        submitUsernameChange();
+                    }
+                });
+            }
+        });
 
         // Show password change fields
         function showPasswordFields() {

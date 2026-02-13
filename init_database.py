@@ -99,11 +99,21 @@ def get_version_from_git():
     except Exception:
         return None
 
-def init_database():
-    """Create the database and tables if they don't exist"""
+def init_database(default_username=None):
+    """
+    Create the database and tables if they don't exist
+    
+    Args:
+        default_username: Username for the default user (defaults to 'admin' if not provided)
+                         Can also be set via INSTANCE_USERNAME environment variable
+    """
     db_path = get_db_path()  # Get path fresh each time for multi-tenant support
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    
+    # Use provided username, environment variable, or default to 'admin'
+    import os
+    username = default_username or os.getenv('INSTANCE_USERNAME') or 'admin'
     
     # Create memes table (base columns)
     cursor.execute("""
@@ -247,13 +257,14 @@ def init_database():
         )
     """)
     
-    # Initialize default admin user if not exists (password: 'admin')
-    cursor.execute("SELECT id FROM users WHERE username = 'admin'")
+    # Initialize default user if not exists (password: 'admin')
+    # Use provided username or default to 'admin'
+    cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
     if cursor.fetchone() is None:
         from werkzeug.security import generate_password_hash
         cursor.execute(
             "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-            ('admin', generate_password_hash('admin'))
+            (username, generate_password_hash('admin'))
         )
     
     conn.commit()
@@ -274,7 +285,7 @@ def init_database():
         print(f"\n📦 Version detected from git tags: {version}")
     else:
         print(f"\n📦 No version detected from git tags (will be set to NULL)")
-    print(f"\n🔐 Default login credentials: username='admin', password='admin'")
+    print(f"\n🔐 Default login credentials: username='{username}', password='admin'")
 
 if __name__ == "__main__":
     init_database()

@@ -12,6 +12,9 @@ import re
 from pathlib import Path
 import os
 import hashlib
+import hmac
+import base64
+import time
 import subprocess
 import sys
 import shutil
@@ -317,6 +320,111 @@ def serve_meme_file(filename):
     except FileNotFoundError:
         return "File not found", 404
 
+def validate_secure_token(token, secret=None, max_age=None):
+    """
+    Validate a secure, time-limited token and return its payload.
+    
+    This is a generic token validation function that can be used for:
+    - Auto-login tokens
+    - Password reset tokens
+    - Email verification tokens
+    - Magic link login tokens
+    - Any other secure, time-limited token needs
+    
+    Args:
+        token: Base64-encoded token string (format: payload:expiry:signature)
+        secret: Secret key for validation (defaults to AUTO_LOGIN_SECRET or SECRET_KEY)
+        max_age: Maximum age in seconds (if None, uses token's own expiry)
+    
+    Returns:
+        payload string if token is valid, None otherwise
+    """
+    try:
+        # Get secret (defaults to AUTO_LOGIN_SECRET or SECRET_KEY)
+        if secret is None:
+            secret = os.environ.get('AUTO_LOGIN_SECRET', 
+                                  os.environ.get('SECRET_KEY', 
+                                                'change-me-auto-login-secret'))
+        
+        # Log secret status (without exposing the actual secret)
+        secret_source = 'AUTO_LOGIN_SECRET' if os.environ.get('AUTO_LOGIN_SECRET') else ('SECRET_KEY' if os.environ.get('SECRET_KEY') else 'default')
+        secret_length = len(secret) if secret else 0
+        secret_preview = secret[:8] + '...' + secret[-4:] if secret and len(secret) > 12 else ('*' * min(secret_length, 12))
+        app.logger.info(f"Token validation: Using secret from {secret_source} (length: {secret_length}, preview: {secret_preview})")
+        
+        # Decode token
+        try:
+            token_data = base64.urlsafe_b64decode(token.encode('utf-8')).decode('utf-8')
+        except Exception as e:
+            app.logger.warning(f"Token validation failed: Base64 decode error: {e}")
+            return None
+        
+        parts = token_data.split(':')
+        if len(parts) != 3:
+            app.logger.warning(f"Token validation failed: Invalid format (expected 3 parts, got {len(parts)})")
+            return None
+        
+        payload, expiry_str, signature = parts
+        app.logger.debug(f"Token validation: payload={payload}, expiry_str={expiry_str}, signature_length={len(signature)}")
+        
+        # Check expiry
+        try:
+            expiry = int(expiry_str)
+            current_time = time.time()
+            time_until_expiry = expiry - current_time
+            
+            # Check if token has expired
+            if current_time > expiry:
+                app.logger.warning(f"Token validation failed: Token expired (expired {abs(time_until_expiry):.0f} seconds ago)")
+                return None
+            
+            app.logger.debug(f"Token validation: Token expires in {time_until_expiry:.0f} seconds")
+            
+            # If max_age is specified, check that too
+            if max_age is not None:
+                token_age = current_time - (expiry - max_age)
+                if token_age > max_age:
+                    app.logger.warning(f"Token validation failed: Token exceeds max_age ({token_age:.0f}s > {max_age}s)")
+                    return None
+        except ValueError as e:
+            app.logger.warning(f"Token validation failed: Invalid expiry format: {e}")
+            return None
+        
+        # Verify signature
+        message = f"{payload}:{expiry}"
+        expected_signature = hmac.new(
+            secret.encode('utf-8'),
+            message.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        # Use constant-time comparison to prevent timing attacks
+        if not hmac.compare_digest(signature, expected_signature):
+            app.logger.warning(f"Token validation failed: Signature mismatch (payload={payload})")
+            app.logger.info(f"Token validation: Expected signature starts with {expected_signature[:16]}..., got {signature[:16]}...")
+            app.logger.info(f"Token validation: Secret being used has length {len(secret)}, preview: {secret[:8] + '...' + secret[-4:] if len(secret) > 12 else '*' * min(len(secret), 12)}")
+            return None
+        
+        # Token is valid - return payload
+        app.logger.info(f"Token validation successful for payload: {payload}")
+        return payload
+    except Exception as e:
+        app.logger.error(f"Error validating secure token: {e}", exc_info=True)
+        return None
+
+def validate_auto_login_token(token):
+    """
+    Validate an auto-login token and return username.
+    
+    This is a convenience wrapper around validate_secure_token() specifically
+    for auto-login use cases (e.g., from coordinator or other auth services).
+    """
+    payload = validate_secure_token(token)
+    if payload:
+        # For auto-login tokens, payload is the username
+        return payload
+    return None
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Login page"""
@@ -324,6 +432,67 @@ def login():
         return redirect(url_for('index'))
     
     current_year = datetime.now().year
+    
+    # Check for auto-login token (GET request only)
+    if request.method == 'GET':
+        token = request.args.get('token')
+        if token:
+            app.logger.info(f"Auto-login attempt: Token received (length: {len(token)})")
+            # Validate token and extract username
+            token_username = validate_auto_login_token(token)
+            if token_username:
+                app.logger.info(f"Token validated successfully, looking up user: {token_username}")
+                # Token is valid - check if user exists and auto-login
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                
+                # Get all users to determine best match
+                cursor.execute("SELECT id, username FROM users")
+                all_users = cursor.fetchall()
+                app.logger.info(f"Users in database: {[dict(u) for u in all_users]}")
+                
+                # Try to find user by token username first (instance name)
+                user_row = None
+                for u in all_users:
+                    if u['username'] == token_username:
+                        user_row = u
+                        break
+                
+                # If not found, use the first/only user in database
+                # This handles cases where username was changed or instance has only one user
+                if not user_row:
+                    if len(all_users) == 1:
+                        # Only one user - use it (most common case for instances)
+                        user_row = all_users[0]
+                        app.logger.info(f"Using only user in database: {user_row['username']} (token username was: {token_username})")
+                    elif len(all_users) > 1:
+                        # Multiple users - use first one as fallback
+                        user_row = all_users[0]
+                        app.logger.info(f"User '{token_username}' not found, using first user: {user_row['username']}")
+                    else:
+                        app.logger.warning(f"No users found in database for auto-login")
+                
+                conn.close()
+                
+                if user_row:
+                    user = User(user_row['id'], user_row['username'])
+                    login_user(user, remember=True)
+                    session.permanent = True
+                    app.logger.info(f"Auto-login successful for user: {user_row['username']} (ID: {user_row['id']})")
+                    
+                    # Redirect to index (remove token from URL)
+                    next_page = request.args.get('next')
+                    if next_page and next_page.startswith('/'):
+                        script_name = request.environ.get('SCRIPT_NAME', '')
+                        if script_name and not next_page.startswith(script_name):
+                            next_page = script_name + next_page
+                        return redirect(next_page)
+                    return redirect(url_for('index'))
+                else:
+                    app.logger.warning(f"No users found in database for auto-login token (token username: {token_username})")
+                    flash('User not found for auto-login token', 'error')
+            else:
+                flash('Invalid or expired auto-login token', 'error')
     
     # Handle update request (single-tenant only)
     # In multi-tenant, coordinator intercepts ?v= before it reaches here
@@ -3826,6 +3995,57 @@ def change_password():
     conn.close()
     
     return jsonify({'success': True, 'message': 'Password changed successfully'})
+
+@app.route('/api/settings/change-username', methods=['POST'])
+@login_required
+def change_username():
+    """Change username"""
+    data = request.get_json()
+    new_username = data.get('new_username', '').strip().lower()
+    
+    if not new_username:
+        return jsonify({'success': False, 'error': 'Username is required'}), 400
+    
+    # Validate username format (same as registration)
+    if not re.match(r'^[a-z0-9]+$', new_username):
+        return jsonify({'success': False, 'error': 'Username must contain only lowercase letters and numbers'}), 400
+    
+    if len(new_username) < 3 or len(new_username) > 20:
+        return jsonify({'success': False, 'error': 'Username must be 3-20 characters'}), 400
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Check if new username is already taken
+    cursor.execute("SELECT id FROM users WHERE username = ? AND id != ?", (new_username, current_user.id))
+    if cursor.fetchone():
+        conn.close()
+        return jsonify({'success': False, 'error': 'Username is already taken'}), 400
+    
+    # Get current username for logging
+    cursor.execute("SELECT username FROM users WHERE id = ?", (current_user.id,))
+    old_username_row = cursor.fetchone()
+    old_username = old_username_row['username'] if old_username_row else 'unknown'
+    
+    # Update username
+    cursor.execute(
+        "UPDATE users SET username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (new_username, current_user.id)
+    )
+    
+    conn.commit()
+    conn.close()
+    
+    app.logger.info(f"User {old_username} (ID: {current_user.id}) changed username to {new_username}")
+    
+    # Update Flask-Login user object
+    current_user.username = new_username
+    
+    return jsonify({
+        'success': True, 
+        'message': f'Username changed successfully to {new_username}',
+        'new_username': new_username
+    })
 
 @app.route('/api/settings/privacy-mode', methods=['GET'])
 @login_required
