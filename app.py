@@ -1321,6 +1321,18 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                 
                 # Restore submodules (e.g. static/clippy) after hard reset
                 app.logger.info("Restoring submodules after hard reset...")
+                app.logger.info(f"Install dir: {install_dir}, Git cmd: {git_cmd}")
+                
+                # Check submodule status before restore
+                status_result = subprocess.run(
+                    [git_cmd, 'submodule', 'status'],
+                    cwd=install_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                app.logger.info(f"Submodule status before restore: {status_result.stdout}")
+                
                 result = subprocess.run(
                     [git_cmd, 'submodule', 'update', '--init', '--recursive'],
                     cwd=install_dir,
@@ -1328,12 +1340,48 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                     text=True,
                     timeout=60
                 )
+                app.logger.info(f"Submodule update stdout: {result.stdout}")
                 if result.returncode != 0:
-                    app.logger.error(f"Submodule update failed: {result.stderr}")
+                    app.logger.error(f"Submodule update failed (exit {result.returncode}): {result.stderr}")
                     return {
                         'success': False,
                         'message': f'Failed to restore submodules: {result.stderr}'
                     }
+                
+                # Verify submodule was restored (check if src/ directory exists)
+                clippy_src = install_dir / 'static' / 'clippy' / 'src'
+                clippy_agents = install_dir / 'static' / 'clippy' / 'agents'
+                if clippy_src.exists() and clippy_agents.exists():
+                    src_files = list(clippy_src.glob('*'))
+                    agent_dirs = list(clippy_agents.glob('*'))
+                    app.logger.info(f"Submodule restored successfully - src/ has {len(src_files)} items, agents/ has {len(agent_dirs)} items")
+                else:
+                    app.logger.warning(f"Submodule restore completed but directories missing - src/ exists: {clippy_src.exists()}, agents/ exists: {clippy_agents.exists()}")
+                    # List what actually exists in static/clippy
+                    clippy_dir = install_dir / 'static' / 'clippy'
+                    if clippy_dir.exists():
+                        existing_files = list(clippy_dir.iterdir())
+                        app.logger.warning(f"Contents of static/clippy: {[f.name for f in existing_files]}")
+                    # Try deinit and reinit
+                    app.logger.info("Attempting submodule deinit/reinit...")
+                    deinit_result = subprocess.run(
+                        [git_cmd, 'submodule', 'deinit', '-f', 'static/clippy'],
+                        cwd=install_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    reinit_result = subprocess.run(
+                        [git_cmd, 'submodule', 'update', '--init', '--recursive', 'static/clippy'],
+                        cwd=install_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=60
+                    )
+                    app.logger.info(f"Reinit stdout: {reinit_result.stdout}")
+                    if reinit_result.returncode != 0:
+                        app.logger.error(f"Reinit failed: {reinit_result.stderr}")
+                
                 app.logger.info("Submodules restored successfully")
                 
                 # Get new commit hash
@@ -3514,6 +3562,18 @@ def change_branch():
             
             # Restore submodules (e.g. static/clippy) after branch switch
             app.logger.info("Restoring submodules after branch switch...")
+            app.logger.info(f"Install dir: {install_dir}, Git cmd: {git_cmd}")
+            
+            # Check submodule status before restore
+            status_result = subprocess.run(
+                [git_cmd, 'submodule', 'status'],
+                cwd=str(install_dir),
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            app.logger.info(f"Submodule status before restore: {status_result.stdout}")
+            
             result = subprocess.run(
                 [git_cmd, 'submodule', 'update', '--init', '--recursive'],
                 cwd=str(install_dir),
@@ -3521,12 +3581,28 @@ def change_branch():
                 text=True,
                 timeout=60
             )
+            app.logger.info(f"Submodule update stdout: {result.stdout}")
             if result.returncode != 0:
-                app.logger.error(f"Submodule update failed: {result.stderr}")
+                app.logger.error(f"Submodule update failed (exit {result.returncode}): {result.stderr}")
                 return jsonify({
                     'success': False,
                     'error': f'Failed to restore submodules: {result.stderr}'
                 }), 500
+            
+            # Verify submodule was restored
+            clippy_src = Path(install_dir) / 'static' / 'clippy' / 'src'
+            clippy_agents = Path(install_dir) / 'static' / 'clippy' / 'agents'
+            if clippy_src.exists() and clippy_agents.exists():
+                src_files = list(clippy_src.glob('*'))
+                agent_dirs = list(clippy_agents.glob('*'))
+                app.logger.info(f"Submodule restored successfully - src/ has {len(src_files)} items, agents/ has {len(agent_dirs)} items")
+            else:
+                app.logger.warning(f"Submodule restore completed but directories missing - src/ exists: {clippy_src.exists()}, agents/ exists: {clippy_agents.exists()}")
+                clippy_dir = Path(install_dir) / 'static' / 'clippy'
+                if clippy_dir.exists():
+                    existing_files = list(clippy_dir.iterdir())
+                    app.logger.warning(f"Contents of static/clippy: {[f.name for f in existing_files]}")
+            
             app.logger.info("Submodules restored successfully")
             
             # Update branch in database
