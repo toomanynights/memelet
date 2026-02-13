@@ -1323,13 +1323,22 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                 app.logger.info("Restoring submodules after hard reset...")
                 app.logger.info(f"Install dir: {install_dir}, Git cmd: {git_cmd}")
                 
+                # Ensure PATH includes standard locations for git submodule dependencies (sed, basename, uname, etc.)
+                env = os.environ.copy()
+                standard_paths = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+                if 'PATH' in env:
+                    env['PATH'] = f"{standard_paths}:{env['PATH']}"
+                else:
+                    env['PATH'] = standard_paths
+                
                 # Check submodule status before restore
                 status_result = subprocess.run(
                     [git_cmd, 'submodule', 'status'],
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=10,
+                    env=env
                 )
                 app.logger.info(f"Submodule status before restore: {status_result.stdout}")
                 
@@ -1338,7 +1347,8 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
-                    timeout=60
+                    timeout=60,
+                    env=env
                 )
                 app.logger.info(f"Submodule update stdout: {result.stdout}")
                 if result.returncode != 0:
@@ -1369,14 +1379,16 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                         cwd=install_dir,
                         capture_output=True,
                         text=True,
-                        timeout=30
+                        timeout=30,
+                        env=env
                     )
                     reinit_result = subprocess.run(
                         [git_cmd, 'submodule', 'update', '--init', '--recursive', 'static/clippy'],
                         cwd=install_dir,
                         capture_output=True,
                         text=True,
-                        timeout=60
+                        timeout=60,
+                        env=env
                     )
                     app.logger.info(f"Reinit stdout: {reinit_result.stdout}")
                     if reinit_result.returncode != 0:
@@ -3564,13 +3576,22 @@ def change_branch():
             app.logger.info("Restoring submodules after branch switch...")
             app.logger.info(f"Install dir: {install_dir}, Git cmd: {git_cmd}")
             
+            # Ensure PATH includes standard locations for git submodule dependencies (sed, basename, uname, etc.)
+            env = os.environ.copy()
+            standard_paths = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+            if 'PATH' in env:
+                env['PATH'] = f"{standard_paths}:{env['PATH']}"
+            else:
+                env['PATH'] = standard_paths
+            
             # Check submodule status before restore
             status_result = subprocess.run(
                 [git_cmd, 'submodule', 'status'],
                 cwd=str(install_dir),
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                env=env
             )
             app.logger.info(f"Submodule status before restore: {status_result.stdout}")
             
@@ -3579,7 +3600,8 @@ def change_branch():
                 cwd=str(install_dir),
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
+                env=env
             )
             app.logger.info(f"Submodule update stdout: {result.stdout}")
             if result.returncode != 0:
