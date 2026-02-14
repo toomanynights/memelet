@@ -238,11 +238,19 @@ def main():
     replicate_token = get_input("Replicate API token (optional)", "")
     config['replicate_token'] = replicate_token
     
-    # Admin username
+    # Admin username and password
     print("\n--- Admin Account ---\n")
     print_info("Set the username for the admin account")
     admin_username = get_input("Admin username", "admin")
     config['admin_username'] = admin_username
+    
+    print_info("Set the password for the admin account")
+    import getpass
+    admin_password = getpass.getpass("Admin password (leave blank for default 'admin'): ")
+    if not admin_password:
+        admin_password = 'admin'
+        print_info("Using default password 'admin'")
+    config['admin_password'] = admin_password
     
     # Confirm configuration
     print_header("Configuration Summary")
@@ -317,8 +325,9 @@ def main():
                         key, value = line.split('=', 1)
                         env[key] = value
             
-            # Pass admin username to init_database
+            # Pass admin username and password to init_database
             env['INSTANCE_USERNAME'] = config['admin_username']
+            env['INSTANCE_PASSWORD'] = config['admin_password']
             
             # Run init_database.py
             subprocess.run([sys.executable, 'init_database.py'], check=True, env=env)

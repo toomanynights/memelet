@@ -99,13 +99,16 @@ def get_version_from_git():
     except Exception:
         return None
 
-def init_database(default_username=None):
+def init_database(default_username=None, default_password=None):
     """
     Create the database and tables if they don't exist
     
     Args:
         default_username: Username for the default user (defaults to 'admin' if not provided)
                          Can also be set via INSTANCE_USERNAME environment variable
+        default_password: Password for the default user (defaults to 'admin' if not provided)
+                         Can also be set via INSTANCE_PASSWORD environment variable
+                         If password is provided (not default 'admin'), password_updated will be set
     """
     db_path = get_db_path()  # Get path fresh each time for multi-tenant support
     conn = sqlite3.connect(db_path)
@@ -114,6 +117,12 @@ def init_database(default_username=None):
     # Use provided username, environment variable, or default to 'admin'
     import os
     username = default_username or os.getenv('INSTANCE_USERNAME') or 'admin'
+    
+    # Use provided password, environment variable, or default to 'admin'
+    password = default_password or os.getenv('INSTANCE_PASSWORD') or 'admin'
+    
+    # Determine if password was explicitly set (not default 'admin')
+    password_provided = (default_password is not None) or (os.getenv('INSTANCE_PASSWORD') is not None)
     
     # Create memes table (base columns)
     cursor.execute("""
@@ -257,15 +266,34 @@ def init_database(default_username=None):
         )
     """)
     
-    # Initialize default user if not exists (password: 'admin')
-    # Use provided username or default to 'admin'
+    # Runtime-safe column migration for password_updated
+    cursor.execute("PRAGMA table_info(users)")
+    user_cols = {row[1] for row in cursor.fetchall()}
+    if 'password_updated' not in user_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN password_updated TIMESTAMP")
+    
+    # Initialize default user if not exists
     cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
     if cursor.fetchone() is None:
         from werkzeug.security import generate_password_hash
-        cursor.execute(
-            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-            (username, generate_password_hash('admin'))
-        )
+        from datetime import datetime
+        
+        # Hash the password
+        password_hash = generate_password_hash(password)
+        
+        # Set password_updated timestamp if password was explicitly provided (not default 'admin')
+        if password_provided:
+            password_updated = datetime.now().isoformat()
+            cursor.execute(
+                "INSERT INTO users (username, password_hash, password_updated) VALUES (?, ?, ?)",
+                (username, password_hash, password_updated)
+            )
+        else:
+            # Default password 'admin' - password_updated stays NULL
+            cursor.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                (username, password_hash)
+            )
     
     conn.commit()
     conn.close()
@@ -280,12 +308,16 @@ def init_database(default_username=None):
     print("   - tags: id, name, description, color, parse_from_filename, ai_can_suggest, created_at")
     print("   - meme_tags: meme_id, tag_id")
     print("   - settings: key, value (including version tracking)")
-    print("   - users: id, username, password_hash, created_at, updated_at")
+    print("   - users: id, username, password_hash, password_updated, created_at, updated_at")
     if version:
         print(f"\n📦 Version detected from git tags: {version}")
     else:
         print(f"\n📦 No version detected from git tags (will be set to NULL)")
-    print(f"\n🔐 Default login credentials: username='{username}', password='admin'")
+    if password_provided:
+        print(f"\n🔐 Login credentials: username='{username}', password='[set during installation]'")
+    else:
+        print(f"\n🔐 Default login credentials: username='{username}', password='admin'")
+        print("   ⚠️  You will be prompted to change your password on first login")
 
 if __name__ == "__main__":
     init_database()

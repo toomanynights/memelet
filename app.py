@@ -537,11 +537,23 @@ def login():
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,))
+        cursor.execute("SELECT id, username, password_hash, password_updated FROM users WHERE username = ?", (username,))
         row = cursor.fetchone()
-        conn.close()
         
         if row and check_password_hash(row['password_hash'], password):
+            # Check if password needs to be updated (password_updated is NULL)
+            password_updated = row['password_updated']
+            
+            if not password_updated:
+                # Password not updated - store user ID in session and redirect to force password change
+                session['force_password_change'] = row['id']
+                session['temp_username'] = row['username']
+                conn.close()
+                flash('Please set a new password for your account', 'info')
+                return redirect(url_for('force_password_change'))
+            
+            # Password is updated - proceed with normal login
+            conn.close()
             user = User(row['id'], row['username'])
             login_user(user, remember=True)  # Remember for 2 weeks
             
@@ -558,6 +570,7 @@ def login():
                 return redirect(next_page)
             return redirect(url_for('index'))
         else:
+            conn.close()
             flash('Invalid username or password', 'error')
             return render_template('login.html', username=username, current_year=current_year)
     
@@ -4106,11 +4119,13 @@ def change_password():
         conn.close()
         return jsonify({'success': False, 'error': 'Current password is incorrect'}), 400
     
-    # Update password
+    # Update password and set password_updated timestamp
+    from datetime import datetime
     new_password_hash = generate_password_hash(new_password)
+    password_updated = datetime.now().isoformat()
     cursor.execute(
-        "UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (new_password_hash, current_user.id)
+        "UPDATE users SET password_hash = ?, password_updated = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (new_password_hash, password_updated, current_user.id)
     )
     
     conn.commit()
