@@ -576,6 +576,75 @@ def login():
     
     return render_template('login.html', current_year=current_year)
 
+@app.route('/force-password-change', methods=['GET', 'POST'])
+def force_password_change():
+    """Force password change for users with NULL password_updated"""
+    # Check if user is authorized (must have force_password_change in session)
+    user_id = session.get('force_password_change')
+    username = session.get('temp_username')
+    
+    if not user_id or not username:
+        flash('Session expired. Please log in again.', 'error')
+        return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '').strip()
+        confirm_password = request.form.get('confirm_password', '').strip()
+        
+        # Validate passwords
+        if not new_password or not confirm_password:
+            flash('Please fill in all fields', 'error')
+            return render_template('force_password_change.html', username=username, current_year=datetime.now().year)
+        
+        if new_password != confirm_password:
+            flash('Passwords do not match', 'error')
+            return render_template('force_password_change.html', username=username, current_year=datetime.now().year)
+        
+        if len(new_password) < 4:
+            flash('Password must be at least 4 characters', 'error')
+            return render_template('force_password_change.html', username=username, current_year=datetime.now().year)
+        
+        # Update password
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verify user still exists
+        cursor.execute("SELECT id, username FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
+            session.pop('force_password_change', None)
+            session.pop('temp_username', None)
+            flash('User not found. Please log in again.', 'error')
+            return redirect(url_for('login'))
+        
+        # Update password and set password_updated timestamp
+        password_hash = generate_password_hash(new_password)
+        password_updated = datetime.now().isoformat()
+        cursor.execute(
+            "UPDATE users SET password_hash = ?, password_updated = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (password_hash, password_updated, user_id)
+        )
+        
+        conn.commit()
+        conn.close()
+        
+        # Clear session flags
+        session.pop('force_password_change', None)
+        session.pop('temp_username', None)
+        
+        # Log the user in
+        user = User(row['id'], row['username'])
+        login_user(user, remember=True)
+        session.permanent = True
+        
+        flash('Password set successfully!', 'success')
+        return redirect(url_for('index'))
+    
+    # GET request - show form
+    return render_template('force_password_change.html', username=username, current_year=datetime.now().year)
+
 @app.route('/logout')
 @login_required
 def logout():
