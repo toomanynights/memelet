@@ -589,8 +589,57 @@ def logout():
     # In private mode, redirect to login page
     return redirect(url_for('login'))
 
+# Module-level flag to track if migration has run
+_db_migration_ran = False
+
+def _ensure_password_updated_column():
+    """Ensure password_updated column exists in users table (idempotent migration)"""
+    global _db_migration_ran
+    if _db_migration_ran:
+        return
+    
+    try:
+        db_path = get_db_path()
+        # Check if database file exists
+        if not Path(db_path).exists():
+            # Database doesn't exist yet - init_database will handle it
+            _db_migration_ran = True
+            return
+        
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Check if users table exists
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='users'
+        """)
+        if not cursor.fetchone():
+            # Users table doesn't exist yet - init_database will handle it
+            conn.close()
+            _db_migration_ran = True
+            return
+        
+        # Check if password_updated column exists
+        cursor.execute("PRAGMA table_info(users)")
+        user_cols = {row[1] for row in cursor.fetchall()}
+        
+        if 'password_updated' not in user_cols:
+            cursor.execute("ALTER TABLE users ADD COLUMN password_updated TIMESTAMP")
+            conn.commit()
+            app.logger.info("Migration: added password_updated column to users table")
+        
+        conn.close()
+        _db_migration_ran = True
+    except Exception as e:
+        app.logger.error(f"Error running password_updated migration: {e}")
+        # Don't set flag to False - allow retry on next connection
+
 def get_db_connection():
     """Get database connection with dynamic path for multi-tenant support"""
+    # Run migration once on first connection
+    _ensure_password_updated_column()
+    
     db_path = get_db_path()  # Get path fresh each time
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row

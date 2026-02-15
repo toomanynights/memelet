@@ -219,11 +219,11 @@
                     <label for="username-display" style="display: block; margin-bottom: 5px; font-weight: 500;">Your
                         Login</label>
                     <div style="display: flex; gap: 10px; align-items: center;">
-                        <input type="text" id="username-display" value="{{ username }}" readonly
-                            style="width: 400px; max-width: 100%; padding: 10px; background: #f7fafc; cursor: not-allowed; color: #4a5568;">
+                    <input type="text" id="username-display" value="{{ username }}" readonly
+                        style="width: 400px; max-width: 100%; padding: 10px; background: #f7fafc; cursor: not-allowed; color: #4a5568;">
                         <button type="button" class="btn" id="show-username-fields-btn"
                             onclick="showUsernameFields()">✏️ Change Username</button>
-                    </div>
+                </div>
                 </div>
                 
                 <div id="username-fields"
@@ -1071,8 +1071,8 @@
                         submitUsernameChange();
                     }
                 });
-            }
-        });
+                }
+            });
 
         // Show password change fields
         function showPasswordFields() {
