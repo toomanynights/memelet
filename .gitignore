@@ -38,3 +38,4 @@ files/_system/thumbnails/*
 .agent/
 .claude/
 .helpers/
+.cursor/
