@@ -1450,87 +1450,37 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                         'message': f'Git reset failed: {result.stderr}'
                     }
                 
-                # Restore submodules (e.g. static/clippy) after hard reset
-                app.logger.info("Restoring submodules after hard reset...")
-                app.logger.info(f"Install dir: {install_dir}, Git cmd: {git_cmd}")
+                # Restore clippy after hard reset.
+                # git-submodule is a shell script with its own PATH requirements which
+                # are unreliable in a systemd environment. Instead, we directly clone
+                # the clippy repo if its contents were wiped by the hard reset.
+                clippy_dir = install_dir / 'static' / 'clippy'
+                clippy_src = clippy_dir / 'src'
+                clippy_agents = clippy_dir / 'agents'
                 
-                # Ensure PATH includes standard locations for git submodule dependencies (sed, basename, uname, etc.)
-                # git-submodule is a shell script that needs these utilities in PATH
-                env = dict(os.environ)
-                standard_paths = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-                env['PATH'] = f"{standard_paths}:{env.get('PATH', '')}"
-                # Also ensure we have a proper shell environment
-                if 'SHELL' not in env:
-                    env['SHELL'] = '/bin/sh'
+                needs_restore = not clippy_src.exists() or not any(clippy_src.iterdir())
+                app.logger.info(f"Clippy restore needed: {needs_restore} (src exists: {clippy_src.exists()})")
                 
-                # Check submodule status before restore
-                status_result = subprocess.run(
-                    [git_cmd, 'submodule', 'status'],
-                    cwd=install_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    env=env
-                )
-                app.logger.info(f"Submodule status before restore: {status_result.stdout}")
-                
-                # Use shell=True with explicit PATH to ensure git-submodule script can find utilities
-                result = subprocess.run(
-                    f'export PATH="{standard_paths}:$PATH" && {git_cmd} submodule update --init --recursive',
-                    cwd=install_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    shell=True,
-                    env=env
-                )
-                app.logger.info(f"Submodule update stdout: {result.stdout}")
-                if result.returncode != 0:
-                    app.logger.error(f"Submodule update failed (exit {result.returncode}): {result.stderr}")
-                    return {
-                        'success': False,
-                        'message': f'Failed to restore submodules: {result.stderr}'
-                    }
-                
-                # Verify submodule was restored (check if src/ directory exists)
-                clippy_src = install_dir / 'static' / 'clippy' / 'src'
-                clippy_agents = install_dir / 'static' / 'clippy' / 'agents'
-                if clippy_src.exists() and clippy_agents.exists():
-                    src_files = list(clippy_src.glob('*'))
-                    agent_dirs = list(clippy_agents.glob('*'))
-                    app.logger.info(f"Submodule restored successfully - src/ has {len(src_files)} items, agents/ has {len(agent_dirs)} items")
-                else:
-                    app.logger.warning(f"Submodule restore completed but directories missing - src/ exists: {clippy_src.exists()}, agents/ exists: {clippy_agents.exists()}")
-                    # List what actually exists in static/clippy
-                    clippy_dir = install_dir / 'static' / 'clippy'
+                if needs_restore:
+                    app.logger.info("Clippy content missing after hard reset - re-cloning...")
+                    # Remove the empty skeleton left by git reset (just .git + .gitignore)
                     if clippy_dir.exists():
-                        existing_files = list(clippy_dir.iterdir())
-                        app.logger.warning(f"Contents of static/clippy: {[f.name for f in existing_files]}")
-                    # Try deinit and reinit
-                    app.logger.info("Attempting submodule deinit/reinit...")
-                    deinit_result = subprocess.run(
-                        f'export PATH="{standard_paths}:$PATH" && {git_cmd} submodule deinit -f static/clippy',
-                        cwd=install_dir,
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                        shell=True,
-                        env=env
+                        shutil.rmtree(clippy_dir)
+                    
+                    clippy_url = 'https://github.com/toomanynights/clippy.js'
+                    clone_result = subprocess.run(
+                        [git_cmd, 'clone', '--depth', '1', clippy_url, str(clippy_dir)],
+                        capture_output=True, text=True, timeout=120
                     )
-                    reinit_result = subprocess.run(
-                        f'export PATH="{standard_paths}:$PATH" && {git_cmd} submodule update --init --recursive static/clippy',
-                        cwd=install_dir,
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                        shell=True,
-                        env=env
-                    )
-                    app.logger.info(f"Reinit stdout: {reinit_result.stdout}")
-                    if reinit_result.returncode != 0:
-                        app.logger.error(f"Reinit failed: {reinit_result.stderr}")
-                
-                app.logger.info("Submodules restored successfully")
+                    if clone_result.returncode != 0:
+                        app.logger.error(f"Failed to re-clone clippy: {clone_result.stderr}")
+                        return {
+                            'success': False,
+                            'message': f'Failed to restore clippy: {clone_result.stderr}'
+                        }
+                    app.logger.info(f"Clippy re-cloned successfully - src/ has {len(list(clippy_src.glob('*')))} items, agents/ has {len(list(clippy_agents.glob('*')))} dirs")
+                else:
+                    app.logger.info(f"Clippy OK - src/ has {len(list(clippy_src.glob('*')))} items, agents/ has {len(list(clippy_agents.glob('*')))} dirs")
                 
                 # Get new commit hash
                 result = subprocess.run(
@@ -3708,63 +3658,36 @@ def change_branch():
                         timeout=30
                     )
             
-            # Restore submodules (e.g. static/clippy) after branch switch
-            app.logger.info("Restoring submodules after branch switch...")
-            app.logger.info(f"Install dir: {install_dir}, Git cmd: {git_cmd}")
+            # Restore clippy after branch switch.
+            # git-submodule is a shell script with its own PATH requirements which
+            # are unreliable in a systemd environment. Instead, we directly clone
+            # the clippy repo if its contents were wiped by the checkout.
+            clippy_dir = Path(install_dir) / 'static' / 'clippy'
+            clippy_src = clippy_dir / 'src'
+            clippy_agents = clippy_dir / 'agents'
             
-            # Ensure PATH includes standard locations for git submodule dependencies (sed, basename, uname, etc.)
-            # git-submodule is a shell script that needs these utilities in PATH
-            env = dict(os.environ)
-            standard_paths = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-            env['PATH'] = f"{standard_paths}:{env.get('PATH', '')}"
-            # Also ensure we have a proper shell environment
-            if 'SHELL' not in env:
-                env['SHELL'] = '/bin/sh'
+            needs_restore = not clippy_src.exists() or not any(clippy_src.iterdir())
+            app.logger.info(f"Clippy restore needed after branch switch: {needs_restore}")
             
-            # Check submodule status before restore
-            status_result = subprocess.run(
-                [git_cmd, 'submodule', 'status'],
-                cwd=str(install_dir),
-                capture_output=True,
-                text=True,
-                timeout=10,
-                env=env
-            )
-            app.logger.info(f"Submodule status before restore: {status_result.stdout}")
-            
-            # Use shell=True with explicit PATH to ensure git-submodule script can find utilities
-            result = subprocess.run(
-                f'export PATH="{standard_paths}:$PATH" && {git_cmd} submodule update --init --recursive',
-                cwd=str(install_dir),
-                capture_output=True,
-                text=True,
-                timeout=60,
-                shell=True,
-                env=env
-            )
-            app.logger.info(f"Submodule update stdout: {result.stdout}")
-            if result.returncode != 0:
-                app.logger.error(f"Submodule update failed (exit {result.returncode}): {result.stderr}")
-                return jsonify({
-                    'success': False,
-                    'error': f'Failed to restore submodules: {result.stderr}'
-                }), 500
-            
-            # Verify submodule was restored
-            clippy_src = Path(install_dir) / 'static' / 'clippy' / 'src'
-            clippy_agents = Path(install_dir) / 'static' / 'clippy' / 'agents'
-            if clippy_src.exists() and clippy_agents.exists():
-                src_files = list(clippy_src.glob('*'))
-                agent_dirs = list(clippy_agents.glob('*'))
-                app.logger.info(f"Submodule restored successfully - src/ has {len(src_files)} items, agents/ has {len(agent_dirs)} items")
-            else:
-                app.logger.warning(f"Submodule restore completed but directories missing - src/ exists: {clippy_src.exists()}, agents/ exists: {clippy_agents.exists()}")
-                clippy_dir = Path(install_dir) / 'static' / 'clippy'
+            if needs_restore:
+                app.logger.info("Clippy content missing after branch switch - re-cloning...")
                 if clippy_dir.exists():
-                    existing_files = list(clippy_dir.iterdir())
-                    app.logger.warning(f"Contents of static/clippy: {[f.name for f in existing_files]}")
-            
-            app.logger.info("Submodules restored successfully")
+                    shutil.rmtree(clippy_dir)
+                
+                clippy_url = 'https://github.com/toomanynights/clippy.js'
+                clone_result = subprocess.run(
+                    [git_cmd, 'clone', '--depth', '1', clippy_url, str(clippy_dir)],
+                    capture_output=True, text=True, timeout=120
+                )
+                if clone_result.returncode != 0:
+                    app.logger.error(f"Failed to re-clone clippy: {clone_result.stderr}")
+                    return jsonify({
+                        'success': False,
+                        'error': f'Failed to restore clippy: {clone_result.stderr}'
+                    }), 500
+                app.logger.info(f"Clippy re-cloned successfully - src/ has {len(list(clippy_src.glob('*')))} items, agents/ has {len(list(clippy_agents.glob('*')))} dirs")
+            else:
+                app.logger.info(f"Clippy OK - src/ has {len(list(clippy_src.glob('*')))} items, agents/ has {len(list(clippy_agents.glob('*')))} dirs")
             
             # Update branch in database
             set_current_branch(new_branch)
