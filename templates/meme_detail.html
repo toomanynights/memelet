@@ -4,6 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ (meme.title if meme.media_type == 'album' and meme.title) or meme.file_name }} - Memelet</title>
+    <!-- Open Graph / Social Media Preview -->
+    {% set og_title = (meme.title if meme.media_type == 'album' and meme.title) or meme.file_name %}
+    {% set og_description = (meme.description or meme.caption or '') | truncate(300, True, '…') %}
+    {% set og_image = (album_items[0].url if album_items else meme.image_url) if meme.media_type == 'album' else meme.image_url %}
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Memelet">
+    <meta property="og:url" content="{{ request.url }}">
+    <meta property="og:title" content="{{ og_title }}">
+    {% if og_description %}
+    <meta property="og:description" content="{{ og_description }}">
+    {% endif %}
+    {% if og_image %}
+    <meta property="og:image" content="{{ og_image }}">
+    {% endif %}
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ og_title }}">
+    {% if og_description %}
+    <meta name="twitter:description" content="{{ og_description }}">
+    {% endif %}
+    {% if og_image %}
+    <meta name="twitter:image" content="{{ og_image }}">
+    {% endif %}
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/meme_detail.css') }}">
