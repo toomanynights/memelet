@@ -12,12 +12,10 @@ import re
 from pathlib import Path
 import os
 import hashlib
-import hmac
-import base64
-import time
 import subprocess
 import sys
 import shutil
+import time
 from datetime import datetime, timedelta
 from config import (
     get_db_path,
@@ -33,9 +31,44 @@ from config import (
     get_replicate_quota_limit,
     get_replicate_quota_used,
     get_install_dir,
-    get_contact_url,
 )
 import atexit
+
+def get_version_from_changelog():
+    """Best-effort version lookup that tolerates mixed file versions during deploy."""
+    try:
+        from init_database import get_version_from_changelog as _impl
+        return _impl()
+    except Exception:
+        pass
+
+    # Fallback parser for environments where init_database lacks the helper.
+    possible_paths = [
+        Path(__file__).parent / 'CHANGELOG.md',
+        Path(get_install_dir()) / 'CHANGELOG.md',
+        Path(get_instance_path()) / 'CHANGELOG.md',
+    ]
+    for changelog_path in possible_paths:
+        try:
+            if not changelog_path.exists():
+                continue
+            with open(changelog_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            match = re.search(r'##\s*\[(\d+\.\d+\.\d+)\]', content)
+            if match:
+                return match.group(1)
+            match = re.search(r'##\s*(\d+\.\d+\.\d+)\s*-', content)
+            if match:
+                return match.group(1)
+            match = re.search(r'#\s*Version\s*(\d+\.\d+\.\d+)', content, re.IGNORECASE)
+            if match:
+                return match.group(1)
+            match = re.search(r'##\s*(\d+\.\d+\.\d+)', content)
+            if match:
+                return match.group(1)
+        except Exception:
+            continue
+    return None
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
@@ -59,75 +92,73 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection while allowing 
 # This allows it to work in both HTTP (dev) and HTTPS (prod) environments
 
 # Automatic hourly scanning scheduler (only in standalone mode, not multi-tenant)
-# Check if we're running in multi-tenant mode by checking for INSTANCE_NAME in config or environment
+# Check if we're running in multi-tenant mode by checking for INSTANCE_NAME in config
 # Global variable to store the scan function for API access
 _hourly_scan_function = None
 
-# Always set up scheduler, but check INSTANCE_NAME at runtime
-try:
-    from apscheduler.schedulers.background import BackgroundScheduler
-    from apscheduler.triggers.cron import CronTrigger
-    
-    scheduler = BackgroundScheduler()
-    
-    def run_hourly_scan():
-        """Trigger hourly scan in standalone mode only"""
-        # Check at runtime if we're in multi-tenant mode
-        if 'INSTANCE_NAME' in app.config or 'INSTANCE_NAME' in os.environ:
-            return  # Skip scan in multi-tenant mode
-
-        try:
-            script_dir = get_script_dir()
-            log_dir = get_log_dir()
-            shell_script = os.path.join(script_dir, 'run_scan.sh')
-            
-            if os.path.exists(shell_script):
-                env = os.environ.copy()
-                env['SCRIPT_DIR'] = script_dir
-                env['LOG_DIR'] = log_dir
-                env['DB_PATH'] = get_db_path()
-                env['MEMES_DIR'] = get_memes_dir()
-                env['MEMES_URL_BASE'] = get_memes_url_base()
-                env['VENV_DIR'] = get_venv_dir()
-                # Ensure PATH includes standard locations for bash
-                env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+if 'INSTANCE_NAME' not in app.config:
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        
+        scheduler = BackgroundScheduler()
+        
+        def run_hourly_scan():
+            """Trigger hourly scan in standalone mode"""
+            try:
+                script_dir = get_script_dir()
+                log_dir = get_log_dir()
+                shell_script = os.path.join(script_dir, 'run_scan.sh')
                 
-                # Use full path to bash to avoid PATH issues in systemd
-                bash_path = '/bin/bash'
-                if not os.path.exists(bash_path):
-                    bash_path = '/usr/bin/bash'
-                
-                # Execute with bash explicitly to ensure it runs
-                subprocess.Popen(
-                    [bash_path, shell_script],
-                    stdout=subprocess.DEVNULL,
-                    stderr=open(os.path.join(log_dir, 'scan_errors.log'), 'a'),
-                    env=env,
-                    start_new_session=True
-                )
-                app.logger.info("Hourly scan triggered")
-        except Exception as e:
-            app.logger.error(f"Failed to trigger hourly scan: {e}")
-    
-    # Store function globally for API access
-    _hourly_scan_function = run_hourly_scan
-    
-    # Schedule hourly scan at :00 of every hour
-    scheduler.add_job(
-        func=run_hourly_scan,
-        trigger=CronTrigger.from_crontab('0 * * * *'),
-        id='hourly_scan',
-        name='Hourly Memelet Scan',
-        replace_existing=True
-    )
-    
-    scheduler.start()
-    atexit.register(lambda: scheduler.shutdown())
-    app.logger.info("Automatic hourly scanning enabled (will skip in multi-tenant mode)")
-except Exception as e:
-    app.logger.error(f"Failed to set up scheduler: {e}")
-    import traceback
-    traceback.print_exc()
+                if os.path.exists(shell_script):
+                    env = os.environ.copy()
+                    env['SCRIPT_DIR'] = script_dir
+                    env['LOG_DIR'] = log_dir
+                    env['DB_PATH'] = get_db_path()
+                    env['MEMES_DIR'] = get_memes_dir()
+                    env['MEMES_URL_BASE'] = get_memes_url_base()
+                    env['VENV_DIR'] = get_venv_dir()
+                    # Ensure PATH includes standard locations for bash
+                    env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+                    
+                    # Use full path to bash to avoid PATH issues in systemd
+                    bash_path = '/bin/bash'
+                    if not os.path.exists(bash_path):
+                        bash_path = '/usr/bin/bash'
+                    
+                    # Execute with bash explicitly to ensure it runs
+                    subprocess.Popen(
+                        [bash_path, shell_script],
+                        stdout=subprocess.DEVNULL,
+                        stderr=open(os.path.join(log_dir, 'scan_errors.log'), 'a'),
+                        env=env,
+                        start_new_session=True
+                    )
+                    app.logger.info("Hourly scan triggered")
+            except Exception as e:
+                app.logger.error(f"Failed to trigger hourly scan: {e}")
+        
+        # Store function globally for API access
+        _hourly_scan_function = run_hourly_scan
+        
+        # Schedule hourly scan at :00 of every hour
+        scheduler.add_job(
+            func=run_hourly_scan,
+            trigger=CronTrigger.from_crontab('0 * * * *'),
+            id='hourly_scan',
+            name='Hourly Memelet Scan',
+            replace_existing=True
+        )
+        
+        scheduler.start()
+        atexit.register(lambda: scheduler.shutdown())
+        app.logger.info("Automatic hourly scanning enabled (standalone mode)")
+    except Exception as e:
+        app.logger.error(f"Failed to set up scheduler: {e}")
+        import traceback
+        traceback.print_exc()
+else:
+    app.logger.info("Running in multi-tenant mode - scanning managed by Memelord")
 
 # User class for Flask-Login
 class User(UserMixin):
@@ -152,10 +183,10 @@ def load_user(user_id):
 # Helper function to ensure version settings exist in database
 def _ensure_version_settings(cursor):
     """Ensure version tracking settings exist in the database"""
-    # current_version: Try to detect from git tags, otherwise None
+    # current_version: Read from CHANGELOG.md if available, otherwise None
     cursor.execute("SELECT value FROM settings WHERE key = 'current_version'")
     if cursor.fetchone() is None:
-        version = get_version_from_git()
+        version = get_version_from_changelog()
         cursor.execute("INSERT INTO settings (key, value) VALUES ('current_version', ?)", 
                       (version if version else None,))
     
@@ -173,11 +204,6 @@ def _ensure_version_settings(cursor):
     cursor.execute("SELECT value FROM settings WHERE key = 'last_update_check'")
     if cursor.fetchone() is None:
         cursor.execute("INSERT INTO settings (key, value) VALUES ('last_update_check', NULL)")
-    
-    # dismissed_release_notes: JSON array of version strings that user has dismissed
-    cursor.execute("SELECT value FROM settings WHERE key = 'dismissed_release_notes'")
-    if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO settings (key, value) VALUES ('dismissed_release_notes', '[]')")
 
 # Default config
 @app.context_processor
@@ -320,111 +346,6 @@ def serve_meme_file(filename):
     except FileNotFoundError:
         return "File not found", 404
 
-def validate_secure_token(token, secret=None, max_age=None):
-    """
-    Validate a secure, time-limited token and return its payload.
-    
-    This is a generic token validation function that can be used for:
-    - Auto-login tokens
-    - Password reset tokens
-    - Email verification tokens
-    - Magic link login tokens
-    - Any other secure, time-limited token needs
-    
-    Args:
-        token: Base64-encoded token string (format: payload:expiry:signature)
-        secret: Secret key for validation (defaults to AUTO_LOGIN_SECRET or SECRET_KEY)
-        max_age: Maximum age in seconds (if None, uses token's own expiry)
-    
-    Returns:
-        payload string if token is valid, None otherwise
-    """
-    try:
-        # Get secret (defaults to AUTO_LOGIN_SECRET or SECRET_KEY)
-        if secret is None:
-            secret = os.environ.get('AUTO_LOGIN_SECRET', 
-                                  os.environ.get('SECRET_KEY', 
-                                                'change-me-auto-login-secret'))
-        
-        # Log secret status (without exposing the actual secret)
-        secret_source = 'AUTO_LOGIN_SECRET' if os.environ.get('AUTO_LOGIN_SECRET') else ('SECRET_KEY' if os.environ.get('SECRET_KEY') else 'default')
-        secret_length = len(secret) if secret else 0
-        secret_preview = secret[:8] + '...' + secret[-4:] if secret and len(secret) > 12 else ('*' * min(secret_length, 12))
-        app.logger.info(f"Token validation: Using secret from {secret_source} (length: {secret_length}, preview: {secret_preview})")
-        
-        # Decode token
-        try:
-            token_data = base64.urlsafe_b64decode(token.encode('utf-8')).decode('utf-8')
-        except Exception as e:
-            app.logger.warning(f"Token validation failed: Base64 decode error: {e}")
-            return None
-        
-        parts = token_data.split(':')
-        if len(parts) != 3:
-            app.logger.warning(f"Token validation failed: Invalid format (expected 3 parts, got {len(parts)})")
-            return None
-        
-        payload, expiry_str, signature = parts
-        app.logger.debug(f"Token validation: payload={payload}, expiry_str={expiry_str}, signature_length={len(signature)}")
-        
-        # Check expiry
-        try:
-            expiry = int(expiry_str)
-            current_time = time.time()
-            time_until_expiry = expiry - current_time
-            
-            # Check if token has expired
-            if current_time > expiry:
-                app.logger.warning(f"Token validation failed: Token expired (expired {abs(time_until_expiry):.0f} seconds ago)")
-                return None
-            
-            app.logger.debug(f"Token validation: Token expires in {time_until_expiry:.0f} seconds")
-            
-            # If max_age is specified, check that too
-            if max_age is not None:
-                token_age = current_time - (expiry - max_age)
-                if token_age > max_age:
-                    app.logger.warning(f"Token validation failed: Token exceeds max_age ({token_age:.0f}s > {max_age}s)")
-                    return None
-        except ValueError as e:
-            app.logger.warning(f"Token validation failed: Invalid expiry format: {e}")
-            return None
-        
-        # Verify signature
-        message = f"{payload}:{expiry}"
-        expected_signature = hmac.new(
-            secret.encode('utf-8'),
-            message.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-        
-        # Use constant-time comparison to prevent timing attacks
-        if not hmac.compare_digest(signature, expected_signature):
-            app.logger.warning(f"Token validation failed: Signature mismatch (payload={payload})")
-            app.logger.info(f"Token validation: Expected signature starts with {expected_signature[:16]}..., got {signature[:16]}...")
-            app.logger.info(f"Token validation: Secret being used has length {len(secret)}, preview: {secret[:8] + '...' + secret[-4:] if len(secret) > 12 else '*' * min(len(secret), 12)}")
-            return None
-        
-        # Token is valid - return payload
-        app.logger.info(f"Token validation successful for payload: {payload}")
-        return payload
-    except Exception as e:
-        app.logger.error(f"Error validating secure token: {e}", exc_info=True)
-        return None
-
-def validate_auto_login_token(token):
-    """
-    Validate an auto-login token and return username.
-    
-    This is a convenience wrapper around validate_secure_token() specifically
-    for auto-login use cases (e.g., from coordinator or other auth services).
-    """
-    payload = validate_secure_token(token)
-    if payload:
-        # For auto-login tokens, payload is the username
-        return payload
-    return None
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Login page"""
@@ -432,67 +353,6 @@ def login():
         return redirect(url_for('index'))
     
     current_year = datetime.now().year
-    
-    # Check for auto-login token (GET request only)
-    if request.method == 'GET':
-        token = request.args.get('token')
-        if token:
-            app.logger.info(f"Auto-login attempt: Token received (length: {len(token)})")
-            # Validate token and extract username
-            token_username = validate_auto_login_token(token)
-            if token_username:
-                app.logger.info(f"Token validated successfully, looking up user: {token_username}")
-                # Token is valid - check if user exists and auto-login
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                
-                # Get all users to determine best match
-                cursor.execute("SELECT id, username FROM users")
-                all_users = cursor.fetchall()
-                app.logger.info(f"Users in database: {[dict(u) for u in all_users]}")
-                
-                # Try to find user by token username first (instance name)
-                user_row = None
-                for u in all_users:
-                    if u['username'] == token_username:
-                        user_row = u
-                        break
-                
-                # If not found, use the first/only user in database
-                # This handles cases where username was changed or instance has only one user
-                if not user_row:
-                    if len(all_users) == 1:
-                        # Only one user - use it (most common case for instances)
-                        user_row = all_users[0]
-                        app.logger.info(f"Using only user in database: {user_row['username']} (token username was: {token_username})")
-                    elif len(all_users) > 1:
-                        # Multiple users - use first one as fallback
-                        user_row = all_users[0]
-                        app.logger.info(f"User '{token_username}' not found, using first user: {user_row['username']}")
-                    else:
-                        app.logger.warning(f"No users found in database for auto-login")
-                
-                conn.close()
-                
-                if user_row:
-                    user = User(user_row['id'], user_row['username'])
-                    login_user(user, remember=True)
-                    session.permanent = True
-                    app.logger.info(f"Auto-login successful for user: {user_row['username']} (ID: {user_row['id']})")
-                    
-                    # Redirect to index (remove token from URL)
-                    next_page = request.args.get('next')
-                    if next_page and next_page.startswith('/'):
-                        script_name = request.environ.get('SCRIPT_NAME', '')
-                        if script_name and not next_page.startswith(script_name):
-                            next_page = script_name + next_page
-                        return redirect(next_page)
-                    return redirect(url_for('index'))
-                else:
-                    app.logger.warning(f"No users found in database for auto-login token (token username: {token_username})")
-                    flash('User not found for auto-login token', 'error')
-            else:
-                flash('Invalid or expired auto-login token', 'error')
     
     # Handle update request (single-tenant only)
     # In multi-tenant, coordinator intercepts ?v= before it reaches here
@@ -515,7 +375,6 @@ def login():
                     current_year=current_year,
                     update_complete=True,
                     update_message=result['message'],
-                    backup_dir=result.get('backup_dir'),
                     restart_required=True
                 )
             else:
@@ -537,23 +396,11 @@ def login():
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, password_hash, password_updated FROM users WHERE username = ?", (username,))
+        cursor.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,))
         row = cursor.fetchone()
+        conn.close()
         
         if row and check_password_hash(row['password_hash'], password):
-            # Check if password needs to be updated (password_updated is NULL)
-            password_updated = row['password_updated']
-            
-            if not password_updated:
-                # Password not updated - store user ID in session and redirect to force password change
-                session['force_password_change'] = row['id']
-                session['temp_username'] = row['username']
-                conn.close()
-                flash('Please set a new password for your account', 'info')
-                return redirect(url_for('force_password_change'))
-            
-            # Password is updated - proceed with normal login
-            conn.close()
             user = User(row['id'], row['username'])
             login_user(user, remember=True)  # Remember for 2 weeks
             
@@ -570,80 +417,10 @@ def login():
                 return redirect(next_page)
             return redirect(url_for('index'))
         else:
-            conn.close()
             flash('Invalid username or password', 'error')
             return render_template('login.html', username=username, current_year=current_year)
     
     return render_template('login.html', current_year=current_year)
-
-@app.route('/force-password-change', methods=['GET', 'POST'])
-def force_password_change():
-    """Force password change for users with NULL password_updated"""
-    # Check if user is authorized (must have force_password_change in session)
-    user_id = session.get('force_password_change')
-    username = session.get('temp_username')
-    
-    if not user_id or not username:
-        flash('Session expired. Please log in again.', 'error')
-        return redirect(url_for('login'))
-    
-    if request.method == 'POST':
-        new_password = request.form.get('new_password', '').strip()
-        confirm_password = request.form.get('confirm_password', '').strip()
-        
-        # Validate passwords
-        if not new_password or not confirm_password:
-            flash('Please fill in all fields', 'error')
-            return render_template('force_password_change.html', username=username, current_year=datetime.now().year)
-        
-        if new_password != confirm_password:
-            flash('Passwords do not match', 'error')
-            return render_template('force_password_change.html', username=username, current_year=datetime.now().year)
-        
-        if len(new_password) < 4:
-            flash('Password must be at least 4 characters', 'error')
-            return render_template('force_password_change.html', username=username, current_year=datetime.now().year)
-        
-        # Update password
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Verify user still exists
-        cursor.execute("SELECT id, username FROM users WHERE id = ?", (user_id,))
-        row = cursor.fetchone()
-        
-        if not row:
-            conn.close()
-            session.pop('force_password_change', None)
-            session.pop('temp_username', None)
-            flash('User not found. Please log in again.', 'error')
-            return redirect(url_for('login'))
-        
-        # Update password and set password_updated timestamp
-        password_hash = generate_password_hash(new_password)
-        password_updated = datetime.now().isoformat()
-        cursor.execute(
-            "UPDATE users SET password_hash = ?, password_updated = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (password_hash, password_updated, user_id)
-        )
-        
-        conn.commit()
-        conn.close()
-        
-        # Clear session flags
-        session.pop('force_password_change', None)
-        session.pop('temp_username', None)
-        
-        # Log the user in
-        user = User(row['id'], row['username'])
-        login_user(user, remember=True)
-        session.permanent = True
-        
-        flash('Password set successfully!', 'success')
-        return redirect(url_for('index'))
-    
-    # GET request - show form
-    return render_template('force_password_change.html', username=username, current_year=datetime.now().year)
 
 @app.route('/logout')
 @login_required
@@ -658,57 +435,8 @@ def logout():
     # In private mode, redirect to login page
     return redirect(url_for('login'))
 
-# Module-level flag to track if migration has run
-_db_migration_ran = False
-
-def _ensure_password_updated_column():
-    """Ensure password_updated column exists in users table (idempotent migration)"""
-    global _db_migration_ran
-    if _db_migration_ran:
-        return
-    
-    try:
-        db_path = get_db_path()
-        # Check if database file exists
-        if not Path(db_path).exists():
-            # Database doesn't exist yet - init_database will handle it
-            _db_migration_ran = True
-            return
-        
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Check if users table exists
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
-            WHERE type='table' AND name='users'
-        """)
-        if not cursor.fetchone():
-            # Users table doesn't exist yet - init_database will handle it
-            conn.close()
-            _db_migration_ran = True
-            return
-        
-        # Check if password_updated column exists
-        cursor.execute("PRAGMA table_info(users)")
-        user_cols = {row[1] for row in cursor.fetchall()}
-        
-        if 'password_updated' not in user_cols:
-            cursor.execute("ALTER TABLE users ADD COLUMN password_updated TIMESTAMP")
-            conn.commit()
-            app.logger.info("Migration: added password_updated column to users table")
-        
-        conn.close()
-        _db_migration_ran = True
-    except Exception as e:
-        app.logger.error(f"Error running password_updated migration: {e}")
-        # Don't set flag to False - allow retry on next connection
-
 def get_db_connection():
     """Get database connection with dynamic path for multi-tenant support"""
-    # Run migration once on first connection
-    _ensure_password_updated_column()
-    
     db_path = get_db_path()  # Get path fresh each time
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -734,33 +462,6 @@ def get_current_version():
         """)
         _ensure_version_settings(cursor)
         conn.commit()
-        
-        # In multi-tenant mode, sync version from config.json to database
-        if 'INSTANCE_NAME' in app.config:
-            try:
-                instance_path = Path(get_instance_path())
-                config_file = instance_path / 'config.json'
-                if config_file.exists():
-                    import json
-                    with open(config_file, 'r') as f:
-                        instance_config = json.load(f)
-                        config_version = instance_config.get('version')
-                        if config_version:
-                            # Check if database version differs from config.json
-                            cursor.execute("SELECT value FROM settings WHERE key = 'current_version'")
-                            row = cursor.fetchone()
-                            db_version = row[0] if row and row[0] else None
-                            
-                            if db_version != config_version:
-                                # Sync version from config.json to database
-                                cursor.execute(
-                                    "INSERT OR REPLACE INTO settings (key, value) VALUES ('current_version', ?)",
-                                    (config_version,)
-                                )
-                                conn.commit()
-                                app.logger.info(f"Synced version from config.json to database: {config_version}")
-            except Exception as e:
-                app.logger.warning(f"Could not sync version from config.json: {e}")
         
         cursor.execute("SELECT value FROM settings WHERE key = 'current_version'")
         row = cursor.fetchone()
@@ -842,224 +543,16 @@ def set_last_update_check(timestamp=None):
         app.logger.error(f"Error setting last_update_check: {e}")
         return False
 
-def get_dismissed_release_notes():
-    """Get list of dismissed release note versions from settings table. Returns list of version strings."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = 'dismissed_release_notes'")
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row and row[0]:
-            import json
-            try:
-                return json.loads(row[0])
-            except json.JSONDecodeError:
-                return []
-        return []
-    except Exception:
-        return []
-
-def dismiss_release_notes(version):
-    """Add a version to the dismissed release notes list. Returns True if successful."""
-    try:
-        dismissed = get_dismissed_release_notes()
-        if version not in dismissed:
-            dismissed.append(version)
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            import json
-            cursor.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES ('dismissed_release_notes', ?)",
-                (json.dumps(dismissed),)
-            )
-            conn.commit()
-            conn.close()
-        return True
-    except Exception as e:
-        app.logger.error(f"Error dismissing release notes: {e}")
-        return False
-
-def should_show_release_notes(version):
-    """Check if release notes should be shown for a given version. Returns True if should show."""
-    if not version:
-        return False
-    
-    # Don't show for dev branch commit hashes
-    if version.startswith('commit:'):
-        return False
-    
-    dismissed = get_dismissed_release_notes()
-    return version not in dismissed
-
-def get_base_version(version):
-    """
-    Extract base version from version string (removes suffix like -beta, -alpha, etc.).
-    Example: "0.8.0-beta" -> "0.8.0"
-    """
-    if not version:
-        return None
-    # Split on '-' and take the first part
-    return version.split('-')[0]
-
 def validate_version_format(version):
     """
-    Validate version format (semver: X.Y.Z, optionally with suffix like -beta).
+    Validate version format (semver: X.Y.Z).
     Returns True if valid, False otherwise.
     """
     if not version:
         return False
-    # Extract base version (without suffix) for validation
-    base_version = get_base_version(version)
     import re
     pattern = r'^\d+\.\d+\.\d+$'
-    return bool(re.match(pattern, base_version))
-
-def find_git_executable():
-    """
-    Find git executable in common locations or PATH.
-    Returns full path to git or None if not found.
-    """
-    # Try common locations first (most reliable)
-    common_git_paths = ['/usr/bin/git', '/usr/local/bin/git', '/bin/git']
-    for git_path in common_git_paths:
-        if Path(git_path).exists():
-            app.logger.debug(f"Found git at: {git_path}")
-            return git_path
-    
-    # Fallback to checking PATH
-    import shutil
-    git_cmd = shutil.which('git')
-    if git_cmd:
-        app.logger.debug(f"Found git in PATH: {git_cmd}")
-        return git_cmd
-    
-    app.logger.warning("Git executable not found in common locations or PATH")
-    return None
-
-def get_version_from_git():
-    """
-    Detect version from git tags using 'git describe --tags'.
-    Works for both exact tag matches and commits after tags.
-    Considers branch-specific tags (e.g., prefers '0.8.7-beta' for beta branch).
-    Returns version string (e.g., "0.8.7" or "0.8.7-beta") or None if not found.
-    """
-    try:
-        install_dir = Path(get_install_dir())
-        git_dir = install_dir / '.git'
-        
-        if not git_dir.exists():
-            return None
-        
-        # Find git executable
-        git_cmd = find_git_executable()
-        if not git_cmd:
-            return None
-        
-        # Get current branch to prefer branch-specific tags
-        current_branch = get_current_branch()
-        branch_suffix = f'-{current_branch}' if current_branch != 'main' and current_branch != 'dev' else ''
-        app.logger.info(f"get_version_from_git(): current_branch={current_branch}, branch_suffix={branch_suffix}")
-        
-        # Try to get exact tag match first (if HEAD is on a tag)
-        result = subprocess.run(
-            [git_cmd, 'describe', '--tags', '--exact-match'],
-            cwd=install_dir,
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        
-        if result.returncode == 0:
-            tag = result.stdout.strip()
-            # Remove 'v' prefix if present (e.g., 'v0.8.7' -> '0.8.7')
-            version = tag.lstrip('v')
-            app.logger.info(f"get_version_from_git(): exact tag match={version}")
-            # Check if it matches branch pattern
-            if branch_suffix:
-                if version.endswith(branch_suffix):
-                    if validate_version_format(version):
-                        app.logger.info(f"get_version_from_git(): returning branch-specific exact tag={version}")
-                        return version
-            else:
-                # Main branch: prefer tags without suffix
-                if '-' not in version and validate_version_format(version):
-                    app.logger.info(f"get_version_from_git(): returning main branch exact tag={version}")
-                    return version
-            # If exact tag doesn't match branch, continue to find nearest matching tag
-        
-        # If not on exact tag, get all tags and find the best match
-        # First, try to get nearest tag with git describe
-        result = subprocess.run(
-            [git_cmd, 'describe', '--tags'],
-            cwd=install_dir,
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        
-        if result.returncode == 0:
-            describe_output = result.stdout.strip()
-            # git describe output format: "v0.8.7" or "v0.8.7-5-gabc1234"
-            # Extract the tag part (before first hyphen if it's a commit count)
-            tag_part = describe_output.split('-')[0]
-            version = tag_part.lstrip('v')
-            app.logger.info(f"get_version_from_git(): nearest tag from describe={version}")
-            
-            # Check if it matches branch pattern
-            if branch_suffix:
-                if version.endswith(branch_suffix):
-                    if validate_version_format(version):
-                        app.logger.info(f"get_version_from_git(): returning branch-specific nearest tag={version}")
-                        return version
-            else:
-                # Main branch: prefer tags without suffix
-                if '-' not in version and validate_version_format(version):
-                    app.logger.info(f"get_version_from_git(): returning main branch nearest tag={version}")
-                    return version
-        
-        # If nearest tag doesn't match branch, try to find all tags and filter by branch
-        # This is more expensive but ensures we get the right tag for the branch
-        result = subprocess.run(
-            [git_cmd, 'tag', '--sort=-version:refname'],
-            cwd=install_dir,
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        
-        if result.returncode == 0:
-            tags = [tag.strip().lstrip('v') for tag in result.stdout.strip().split('\n') if tag.strip()]
-            app.logger.info(f"get_version_from_git(): found {len(tags)} tags, filtering for branch={current_branch}")
-            
-            # Filter tags by branch pattern
-            for tag in tags:
-                if branch_suffix:
-                    # Beta branch: prefer tags with -beta suffix
-                    if tag.endswith(branch_suffix):
-                        if validate_version_format(tag):
-                            app.logger.info(f"get_version_from_git(): returning branch-specific tag from list={tag}")
-                            return tag
-                else:
-                    # Main branch: prefer tags without suffix
-                    if '-' not in tag and validate_version_format(tag):
-                        app.logger.info(f"get_version_from_git(): returning main branch tag from list={tag}")
-                        return tag
-            
-            # Fallback: return first valid tag if no branch-specific match
-            for tag in tags:
-                if validate_version_format(tag):
-                    app.logger.info(f"get_version_from_git(): returning fallback tag={tag}")
-                    return tag
-        
-        return None
-    except subprocess.TimeoutExpired:
-        app.logger.warning("Timeout getting version from git")
-        return None
-    except Exception as e:
-        app.logger.debug(f"Could not get version from git: {e}")
-        return None
+    return bool(re.match(pattern, version))
 
 def get_dev_commit_info():
     """
@@ -1071,40 +564,19 @@ def get_dev_commit_info():
         git_dir = install_dir / '.git'
         
         if not git_dir.exists():
-            app.logger.warning(f"Git directory not found at {git_dir}")
-            return None
-        
-        # Find git executable
-        git_cmd = find_git_executable()
-        if not git_cmd:
-            app.logger.warning("Git command not found")
-            return None
-        
-        # Check if git command works
-        try:
-            check_git = subprocess.run(
-                [git_cmd, '--version'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if check_git.returncode != 0:
-                app.logger.warning("Git command not available (git --version failed)")
-                return None
-        except FileNotFoundError:
-            app.logger.warning("Git command not found")
+            app.logger.debug(f"Git directory not found at {git_dir}")
             return None
         
         # Get current commit hash
         result = subprocess.run(
-            [git_cmd, 'rev-parse', 'HEAD'],
+            ['git', 'rev-parse', 'HEAD'],
             cwd=install_dir,
             capture_output=True,
             text=True,
             timeout=10
         )
         if result.returncode != 0:
-            app.logger.warning(f"Failed to get current commit (returncode {result.returncode}): {result.stderr}")
+            app.logger.warning(f"Failed to get current commit: {result.stderr}")
             return None
         
         current_commit = result.stdout.strip()
@@ -1114,14 +586,14 @@ def get_dev_commit_info():
         
         # Fetch latest (don't pull, just check) - ignore errors (network might be down)
         fetch_result = subprocess.run(
-            [git_cmd, 'fetch', 'origin', 'dev'],
+            ['git', 'fetch', 'origin', 'dev'],
             cwd=install_dir,
             capture_output=True,
             text=True,
             timeout=30
         )
         if fetch_result.returncode != 0:
-            app.logger.warning(f"Git fetch failed (may be offline): {fetch_result.stderr}")
+            app.logger.debug(f"Git fetch failed (may be offline): {fetch_result.stderr}")
             # Still return current commit even if fetch fails
             return {
                 'current_commit': current_commit[:8] if current_commit else None,
@@ -1131,15 +603,14 @@ def get_dev_commit_info():
         
         # Get remote commit hash
         result = subprocess.run(
-            [git_cmd, 'rev-parse', 'origin/dev'],
+            ['git', 'rev-parse', 'origin/dev'],
             cwd=install_dir,
             capture_output=True,
             text=True,
             timeout=10
         )
         if result.returncode != 0:
-            app.logger.warning(f"Failed to get remote commit: {result.stderr}")
-            app.logger.warning(f"Current commit: {current_commit[:8] if current_commit else 'None'}")
+            app.logger.debug(f"Failed to get remote commit: {result.stderr}")
             return {
                 'current_commit': current_commit[:8] if current_commit else None,
                 'has_new_commits': False,
@@ -1148,8 +619,6 @@ def get_dev_commit_info():
         
         remote_commit = result.stdout.strip()
         has_new_commits = current_commit != remote_commit
-        
-        app.logger.info(f"Commit comparison: current={current_commit[:8] if current_commit else 'None'}, remote={remote_commit[:8] if remote_commit else 'None'}, has_new={has_new_commits}")
         
         return {
             'current_commit': current_commit[:8] if current_commit else None,
@@ -1165,108 +634,101 @@ def get_dev_commit_info():
 
 def get_available_version():
     """
-    Get available version from GitHub API.
+    Get available version from GitHub API (single-tenant) or config.json/env var (multi-tenant).
     For dev branch, returns commit info string (e.g., "commit: abc1234").
     Returns version string (e.g., "1.2.3") or None if not available.
     """
-    # Check current branch
-    current_branch = get_current_branch()
-    app.logger.info(f"get_available_version(): current_branch={current_branch}")
-    
-    # Dev branch: return commit info instead of version
-    if current_branch == 'dev':
-        app.logger.info(f"get_available_version(): dev branch detected")
-        # In multi-tenant, dev branch is always up to date (code synced from IDE)
-        # Return the current commit hash to show consistency
-        if 'INSTANCE_NAME' in app.config:
-            app.logger.info(f"get_available_version(): multi-tenant mode detected, INSTANCE_NAME={app.config.get('INSTANCE_NAME')}")
-            # For dev branch, get commit info to return commit-based version
+    # Check if we're in multi-tenant mode
+    if 'INSTANCE_NAME' in app.config:
+        # Multi-tenant: read from config.json first (like git_branch), then env var
+        try:
+            instance_path = Path(get_instance_path())
+            config_file = instance_path / 'config.json'
+            if config_file.exists():
+                import json
+                with open(config_file, 'r') as f:
+                    instance_config = json.load(f)
+                    available_version = instance_config.get('available_version')
+                    if available_version and validate_version_format(available_version):
+                        return available_version
+        except Exception as e:
+            app.logger.warning(f"Could not read available_version from config.json: {e}")
+        
+        # Fallback to environment variable (set by wrapper)
+        available_version = os.environ.get('AVAILABLE_VERSION')
+        if available_version and validate_version_format(available_version):
+            return available_version
+        return None
+    else:
+        # Single-tenant: check current branch first
+        current_branch = get_current_branch()
+        
+        # Dev branch: return commit info instead of version
+        if current_branch == 'dev':
             commit_info = get_dev_commit_info()
             if commit_info and commit_info.get('current_commit'):
-                result = f"commit:{commit_info['current_commit']}"
-                app.logger.info(f"get_available_version(): returning {result} for multi-tenant dev branch (from commit info)")
-                return result
-            # Fallback to database version if commit info not available
-            current_version = get_current_version()
-            app.logger.info(f"get_available_version(): current_version from DB={current_version} (fallback)")
-            result = current_version if current_version else None
-            app.logger.info(f"get_available_version(): returning {result} for multi-tenant dev branch (fallback)")
-            return result
+                # Return commit hash as "available version" for display
+                # The check_for_updates function will handle commit comparison
+                return f"commit:{commit_info['current_commit']}"
+            # Not a git repo or failed - return None (will show "Checking..." or "None")
+            return None
         
-        app.logger.info(f"get_available_version(): single-tenant dev branch, checking for commits")
-        # Single-tenant: check for new commits
-        commit_info = get_dev_commit_info()
-        if commit_info:
-            if commit_info.get('remote_commit'):
-                result = f"commit:{commit_info['remote_commit']}"
-                app.logger.info(f"get_available_version(): returning {result} (remote commit)")
-                return result
-            elif commit_info.get('current_commit'):
-                result = f"commit:{commit_info['current_commit']}"
-                app.logger.info(f"get_available_version(): returning {result} (current commit)")
-                return result
-        app.logger.info(f"get_available_version(): no commit info available, returning None")
-        return None
-    
-    # For other branches, check GitHub API for latest release
-    app.logger.info(f"get_available_version(): checking GitHub API for branch={current_branch}")
-    try:
-        import requests
-        github_repo = os.environ.get('GITHUB_REPO', 'toomanynights/memelet')
-        branch_suffix = f'-{current_branch}' if current_branch != 'main' else ''
-        app.logger.info(f"get_available_version(): github_repo={github_repo}, branch_suffix={branch_suffix}")
-        
-        tags_url = f'https://api.github.com/repos/{github_repo}/tags'
-        tags_response = requests.get(tags_url, timeout=5)
-        app.logger.info(f"get_available_version(): tags API response status={tags_response.status_code}")
-        if tags_response.status_code == 200:
-            tags = tags_response.json()
-            app.logger.info(f"get_available_version(): found {len(tags)} tags")
-            if tags:
-                # Filter tags: prefer tags that match branch name pattern
-                for tag in tags:
-                    tag_name = tag.get('name', '').lstrip('v')
-                    app.logger.info(f"get_available_version(): checking tag={tag_name}")
-                    if current_branch == 'main':
-                        # Main branch: prefer tags without suffix (e.g., "0.8.1", not "0.8.1-beta")
-                        if validate_version_format(tag_name) and '-' not in tag_name:
-                            app.logger.info(f"get_available_version(): returning main branch tag={tag_name}")
+        # For other branches, check GitHub API for latest release
+        # Filter tags by branch name pattern (e.g., beta releases tagged as "0.8.1-beta")
+        try:
+            import requests
+            
+            # Get GitHub repo from env or use default
+            github_repo = os.environ.get('GITHUB_REPO', 'toomanynights/memelet')
+            
+            # Get all tags and filter by branch
+            tags_url = f'https://api.github.com/repos/{github_repo}/tags'
+            tags_response = requests.get(tags_url, timeout=5)
+            if tags_response.status_code == 200:
+                tags = tags_response.json()
+                if tags:
+                    # Filter tags: prefer tags that match branch name pattern
+                    # e.g., for "beta" branch, prefer tags like "0.8.1-beta" or tags on beta branch
+                    # For "main" branch, prefer tags like "0.8.1" (no suffix)
+                    branch_suffix = f'-{current_branch}' if current_branch != 'main' else ''
+                    
+                    # First, try to find tags matching branch pattern
+                    for tag in tags:
+                        tag_name = tag.get('name', '').lstrip('v')
+                        # Check if tag matches branch pattern
+                        if current_branch == 'main':
+                            # Main branch: prefer tags without suffix (e.g., "0.8.1", not "0.8.1-beta")
+                            if validate_version_format(tag_name) and '-' not in tag_name:
+                                return tag_name
+                        else:
+                            # Other branches: prefer tags with branch suffix (e.g., "0.8.1-beta")
+                            if tag_name.endswith(branch_suffix):
+                                version = tag_name[:-len(branch_suffix)]
+                                if validate_version_format(version):
+                                    return version
+                            # Fallback: if no branch-specific tag, check if tag exists on this branch
+                            # (This requires git, so we'll just use the first valid tag as fallback)
+                    
+                    # Fallback: use first valid semver tag
+                    for tag in tags:
+                        tag_name = tag.get('name', '').lstrip('v')
+                        if validate_version_format(tag_name):
                             return tag_name
-                    else:
-                        # Other branches: prefer tags with branch suffix (e.g., "0.8.1-beta")
-                        if tag_name.endswith(branch_suffix):
-                            base_version = tag_name[:-len(branch_suffix)]
-                            if validate_version_format(base_version):
-                                app.logger.info(f"get_available_version(): returning branch-specific tag={tag_name}")
-                                return tag_name  # Return full version with suffix
-                
-                # Fallback: use first valid semver tag
-                app.logger.info(f"get_available_version(): no branch-specific tag found, using fallback")
-                for tag in tags:
-                    tag_name = tag.get('name', '').lstrip('v')
-                    if validate_version_format(tag_name):
-                        app.logger.info(f"get_available_version(): returning fallback tag={tag_name}")
-                        return tag_name
+            
+            # Also try releases endpoint (but releases are global, not branch-specific)
+            api_url = f'https://api.github.com/repos/{github_repo}/releases/latest'
+            response = requests.get(api_url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                tag_name = data.get('tag_name', '').lstrip('v')
+                if validate_version_format(tag_name):
+                    return tag_name
+        except requests.exceptions.RequestException as e:
+            app.logger.warning(f"Error checking GitHub for available version: {e}")
+        except Exception as e:
+            app.logger.warning(f"Error getting available version: {e}")
         
-        # Also try releases endpoint (but releases are global, not branch-specific)
-        api_url = f'https://api.github.com/repos/{github_repo}/releases/latest'
-        app.logger.info(f"get_available_version(): trying releases endpoint")
-        response = requests.get(api_url, timeout=5)
-        app.logger.info(f"get_available_version(): releases API response status={response.status_code}")
-        if response.status_code == 200:
-            data = response.json()
-            tag_name = data.get('tag_name', '').lstrip('v')
-            app.logger.info(f"get_available_version(): latest release tag={tag_name}")
-            if validate_version_format(tag_name):
-                app.logger.info(f"get_available_version(): returning release tag={tag_name}")
-                return tag_name
-    except requests.exceptions.RequestException as e:
-        app.logger.warning(f"Error checking GitHub for available version: {e}")
-    except Exception as e:
-        app.logger.warning(f"Error getting available version: {e}")
-    
-    app.logger.info(f"get_available_version(): no version found, returning None")
-    return None
+        return None
 
 def check_for_updates():
     """
@@ -1289,16 +751,8 @@ def check_for_updates():
         'needs_update': False
     }
     
-    # Special handling for dev branch
+    # Special handling for dev branch (commit-based updates)
     if current_branch == 'dev':
-        # In multi-tenant, dev branch is always up to date (code synced from IDE)
-        if 'INSTANCE_NAME' in app.config:
-            result['update_available'] = False
-            result['needs_update'] = False
-            result['available_version'] = current  # Show current version as available
-            return result
-        
-        # Single-tenant: check for new commits
         commit_info = get_dev_commit_info()
         if commit_info:
             # Format available version for display
@@ -1334,21 +788,12 @@ def check_for_updates():
         return result
     
     # Compare versions (simple string comparison works for semver)
-    # Extract base versions (without suffixes) for comparison
     try:
-        current_base = get_base_version(current)
-        available_base = get_base_version(available)
+        current_parts = [int(x) for x in current.split('.')]
+        available_parts = [int(x) for x in available.split('.')]
         
-        if current_base and available_base:
-            current_parts = [int(x) for x in current_base.split('.')]
-            available_parts = [int(x) for x in available_base.split('.')]
-            
-            if available_parts > current_parts:
-                result['needs_update'] = True
-            elif available_parts == current_parts and available != current:
-                # Same base version but different suffix (e.g., 0.8.0 vs 0.8.0-beta)
-                # Consider it an update if the full version strings differ
-                result['needs_update'] = True
+        if available_parts > current_parts:
+            result['needs_update'] = True
     except (ValueError, AttributeError):
         # If version comparison fails, assume update is needed if versions differ
         if available != current:
@@ -1402,17 +847,9 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                         'message': 'Install directory is not a git repository. Cannot update dev branch.'
                     }
                 
-                # Find git executable
-                git_cmd = find_git_executable()
-                if not git_cmd:
-                    return {
-                        'success': False,
-                        'message': 'Git command not found. Please ensure git is installed.'
-                    }
-                
                 # Get current commit hash
                 result = subprocess.run(
-                    [git_cmd, 'rev-parse', 'HEAD'],
+                    ['git', 'rev-parse', 'HEAD'],
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
@@ -1423,7 +860,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                 # Fetch and pull
                 app.logger.info("Fetching latest changes...")
                 result = subprocess.run(
-                    [git_cmd, 'fetch', 'origin'],
+                    ['git', 'fetch', 'origin'],
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
@@ -1435,10 +872,9 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                         'message': f'Git fetch failed: {result.stderr}'
                     }
                 
-                app.logger.info("Resetting to latest dev branch (discarding local changes)...")
-                # Hard reset to origin/dev to discard any local changes
+                app.logger.info("Pulling latest commits...")
                 result = subprocess.run(
-                    [git_cmd, 'reset', '--hard', 'origin/dev'],
+                    ['git', 'pull', 'origin', 'dev'],
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
@@ -1447,44 +883,12 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                 if result.returncode != 0:
                     return {
                         'success': False,
-                        'message': f'Git reset failed: {result.stderr}'
+                        'message': f'Git pull failed: {result.stderr}'
                     }
-                
-                # Restore clippy after hard reset.
-                # git-submodule is a shell script with its own PATH requirements which
-                # are unreliable in a systemd environment. Instead, we directly clone
-                # the clippy repo if its contents were wiped by the hard reset.
-                clippy_dir = install_dir / 'static' / 'clippy'
-                clippy_src = clippy_dir / 'src'
-                clippy_agents = clippy_dir / 'agents'
-                
-                needs_restore = not clippy_src.exists() or not any(clippy_src.iterdir())
-                app.logger.info(f"Clippy restore needed: {needs_restore} (src exists: {clippy_src.exists()})")
-                
-                if needs_restore:
-                    app.logger.info("Clippy content missing after hard reset - re-cloning...")
-                    # Remove the empty skeleton left by git reset (just .git + .gitignore)
-                    if clippy_dir.exists():
-                        shutil.rmtree(clippy_dir)
-                    
-                    clippy_url = 'https://github.com/toomanynights/clippy.js'
-                    clone_result = subprocess.run(
-                        [git_cmd, 'clone', '--depth', '1', clippy_url, str(clippy_dir)],
-                        capture_output=True, text=True, timeout=120
-                    )
-                    if clone_result.returncode != 0:
-                        app.logger.error(f"Failed to re-clone clippy: {clone_result.stderr}")
-                        return {
-                            'success': False,
-                            'message': f'Failed to restore clippy: {clone_result.stderr}'
-                        }
-                    app.logger.info(f"Clippy re-cloned successfully - src/ has {len(list(clippy_src.glob('*')))} items, agents/ has {len(list(clippy_agents.glob('*')))} dirs")
-                else:
-                    app.logger.info(f"Clippy OK - src/ has {len(list(clippy_src.glob('*')))} items, agents/ has {len(list(clippy_agents.glob('*')))} dirs")
                 
                 # Get new commit hash
                 result = subprocess.run(
-                    [git_cmd, 'rev-parse', 'HEAD'],
+                    ['git', 'rev-parse', 'HEAD'],
                     cwd=install_dir,
                     capture_output=True,
                     text=True,
@@ -1499,8 +903,8 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                         'restart_required': False
                     }
                 
-                # Update version from git tags if available
-                new_version = get_version_from_git()
+                # Update version from CHANGELOG.md if available
+                new_version = get_version_from_changelog()
                 if new_version:
                     set_current_version(new_version)
                 
@@ -1540,14 +944,6 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
         
         app.logger.info(f"Downloading version {target_version} from {github_repo}")
         
-        # Find git executable
-        git_cmd = find_git_executable()
-        if not git_cmd:
-            return {
-                'success': False,
-                'message': 'Git command not found. Please ensure git is installed.'
-            }
-        
         # Create temporary directory for download
         temp_dir = install_dir.parent / f'memelet-{target_version}-temp'
         if temp_dir.exists():
@@ -1558,9 +954,8 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
             # Clone the repository at the specific tag/version
             tag = f'v{target_version}' if not target_version.startswith('v') else target_version
             clone_cmd = [
-                git_cmd, 'clone',
+                'git', 'clone',
                 '--depth', '1',
-                '--recurse-submodules',
                 '--branch', tag,
                 f'https://github.com/{github_repo}.git',
                 str(temp_dir)
@@ -1570,9 +965,8 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
             if result.returncode != 0:
                 # Try without branch (might be a tag)
                 clone_cmd = [
-                    git_cmd, 'clone',
+                    'git', 'clone',
                     '--depth', '1',
-                    '--recurse-submodules',
                     f'https://github.com/{github_repo}.git',
                     str(temp_dir)
                 ]
@@ -1584,7 +978,7 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                     }
                 
                 # Checkout the specific tag
-                checkout_cmd = [git_cmd, 'checkout', tag]
+                checkout_cmd = ['git', 'checkout', tag]
                 result = subprocess.run(checkout_cmd, cwd=temp_dir, capture_output=True, text=True, timeout=60)
                 if result.returncode != 0:
                     return {
@@ -1622,20 +1016,6 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
             # Clean up temp directory
             shutil.rmtree(temp_dir)
             
-            # Clean up old backup directories, keeping the 2 most recent
-            try:
-                backup_dirs = sorted(
-                    [d for d in install_dir.parent.iterdir()
-                     if d.is_dir() and d.name.startswith('memelet-backup-')],
-                    key=lambda d: d.name,
-                    reverse=True
-                )
-                for old_backup in backup_dirs[1:]:
-                    app.logger.info(f"Removing old backup: {old_backup.name}")
-                    shutil.rmtree(old_backup)
-            except Exception as cleanup_err:
-                app.logger.warning(f"Failed to clean up old backups: {cleanup_err}")
-            
             # Update version in database
             if not set_current_version(target_version):
                 app.logger.warning("Failed to update version in database, but update completed")
@@ -1643,7 +1023,6 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
             return {
                 'success': True,
                 'message': f'Successfully updated to version {target_version}',
-                'backup_dir': backup_dir.name,
                 'restart_required': True
             }
             
@@ -1965,8 +1344,7 @@ def index():
         show_pagination=total_pages > 1,
         clippy_agent=get_clippy_agent(),
         is_public_mode=is_public_mode(),
-        base_url=base_url,
-        contact_url=get_contact_url()
+        base_url=base_url
     )
 
 @app.route('/meme/<int:meme_id>', methods=['GET', 'POST'])
@@ -2849,25 +2227,48 @@ def process_single_meme(meme_id: int):
     
     log_file = os.path.join(get_log_dir(), "scan.log")
 
-    # Mark meme as processing in DB
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE memes
-            SET status='processing', error_message=NULL, updated_at=CURRENT_TIMESTAMP
-            WHERE id=?
-            """,
-            (meme_id,)
-        )
-        conn.commit()
-        conn.close()
-    except Exception:
+    # Mark meme as processing in DB (with backward-compatible fallback for older schemas)
+    status_marked = False
+    status_mark_error = None
+    target_statuses = ['processing', 'new']
+    for _ in range(3):
+        conn = None
         try:
-            conn.close()
-        except Exception:
-            pass
+            conn = get_db_connection()
+            cur = conn.cursor()
+            updated = False
+            for target_status in target_statuses:
+                try:
+                    cur.execute(
+                        """
+                        UPDATE memes
+                        SET status=?, error_message=NULL, updated_at=CURRENT_TIMESTAMP
+                        WHERE id=?
+                        """,
+                        (target_status, meme_id)
+                    )
+                    updated = True
+                    break
+                except sqlite3.IntegrityError:
+                    # Older DB CHECK constraint may not allow 'processing'; fallback to 'new'
+                    continue
+            if not updated:
+                raise sqlite3.IntegrityError("Could not set a compatible pre-processing status")
+            conn.commit()
+            status_marked = True
+            break
+        except Exception as e:
+            status_mark_error = e
+            time.sleep(0.15)
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    if not status_marked:
+        return {'success': False, 'error': f"Could not mark meme as processing: {status_mark_error}"}, 503
 
     # Ensure logs directory exists
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -3207,9 +2608,7 @@ def get_clippy_agent_setting():
 @login_required
 def set_clippy_agent_setting():
     """Save Clippy agent selection"""
-    data = request.get_json(force=True, silent=True)
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request body'}), 400
+    data = request.get_json()
     agent_form = data.get('agent_form', 'none')
     
     # Validate agent_form (should be 'none' or a valid agent name)
@@ -3300,9 +2699,16 @@ def get_disk_usage():
 def initiate_update():
     """
     Initiate version update.
-    For single-tenant: Logs out user and redirects to login with ?v= parameter, then performs update.
-    For multi-tenant: Logs out user and redirects to login with ?v= parameter, coordinator handles update.
+    For single-tenant: Logs out user and redirects to login with ?v= parameter.
+    For multi-tenant: Returns error (handled by memelord).
     """
+    # Only allow in single-tenant mode
+    if 'INSTANCE_NAME' in app.config:
+        return jsonify({
+            'success': False,
+            'error': 'Updates are handled by memelord in multi-tenant mode'
+        }), 403
+    
     try:
         # Get available version and current branch
         available_version = get_available_version()
@@ -3327,18 +2733,10 @@ def initiate_update():
         # Determine redirect URL based on branch
         if current_branch == 'dev':
             # For dev branch, use ?update=dev (no version needed)
-            # Note: In multi-tenant, coordinator will show message to use dashboard
             redirect_url = url_for('login', update='dev', _external=False)
         else:
             # For other branches, use ?v=version
-            # In multi-tenant, coordinator will intercept this and handle the update
             redirect_url = url_for('login', v=available_version, _external=False)
-        
-        # In multi-tenant mode, ensure SCRIPT_NAME is included in redirect URL
-        if 'INSTANCE_NAME' in app.config:
-            script_name = request.environ.get('SCRIPT_NAME', '')
-            if script_name and not redirect_url.startswith(script_name):
-                redirect_url = script_name + redirect_url
         
         # Return redirect response (client will follow it)
         return jsonify({
@@ -3353,388 +2751,6 @@ def initiate_update():
             'success': False,
             'error': str(e)
         }), 500
-
-@app.route('/api/settings/branches', methods=['GET'])
-@login_required
-def get_available_branches():
-    """Get list of available branches (single-tenant only)"""
-    try:
-        # Only available in single-tenant mode
-        if 'INSTANCE_NAME' in app.config:
-            return jsonify({
-                'success': False,
-                'error': 'Branch switching is only available in single-tenant mode'
-            }), 400
-        
-        # Try to detect branches from local git repository
-        git_cmd = find_git_executable()
-        if not git_cmd:
-            return jsonify({
-                'success': False,
-                'error': 'Git command not available'
-            }), 500
-        
-        install_dir = Path(get_install_dir())
-        git_dir = install_dir / '.git'
-        
-        if not git_dir.exists():
-            return jsonify({
-                'success': False,
-                'error': 'Not a git repository'
-            }), 500
-        
-        # Get list of remote branches
-        try:
-            result = subprocess.run(
-                [git_cmd, 'branch', '-r'],
-                cwd=str(install_dir),
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if result.returncode != 0:
-                app.logger.error(f"git branch -r failed: {result.stderr}")
-                return jsonify({
-                    'success': False,
-                    'error': 'Failed to list branches'
-                }), 500
-            
-            # Parse branch names (format: "  origin/main")
-            branches = []
-            for line in result.stdout.strip().split('\n'):
-                line = line.strip()
-                if line and 'origin/' in line and '->' not in line:  # Skip HEAD pointer
-                    branch_name = line.split('origin/')[-1]
-                    branches.append(branch_name)
-            
-            # If no remote branches found, fallback to local branches
-            if not branches:
-                result = subprocess.run(
-                    [git_cmd, 'branch'],
-                    cwd=str(install_dir),
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                
-                if result.returncode == 0:
-                    for line in result.stdout.strip().split('\n'):
-                        line = line.strip().lstrip('* ').strip()
-                        if line:
-                            branches.append(line)
-            
-            # Default branches if nothing found
-            if not branches:
-                branches = ['main', 'dev', 'beta']
-            
-            # Remove duplicates and sort
-            branches = sorted(set(branches))
-            
-            return jsonify({
-                'success': True,
-                'branches': branches,
-                'current_branch': get_current_branch()
-            })
-        
-        except subprocess.TimeoutExpired:
-            app.logger.error("Git command timed out")
-            return jsonify({
-                'success': False,
-                'error': 'Git command timed out'
-            }), 500
-        except Exception as e:
-            app.logger.error(f"Error listing branches: {e}")
-            return jsonify({
-                'success': False,
-                'error': str(e)
-            }), 500
-    
-    except Exception as e:
-        app.logger.error(f"Error getting branches: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/settings/change-branch', methods=['POST'])
-@login_required
-def change_branch():
-    """Change git branch (single-tenant only, requires restart)"""
-    try:
-        # Only available in single-tenant mode
-        if 'INSTANCE_NAME' in app.config:
-            return jsonify({
-                'success': False,
-                'error': 'Branch switching is only available in single-tenant mode. Use Memelord dashboard to switch branches.'
-            }), 400
-        
-        data = request.get_json()
-        new_branch = data.get('branch', '').strip()
-        
-        if not new_branch:
-            return jsonify({
-                'success': False,
-                'error': 'Branch name is required'
-            }), 400
-        
-        # Validate branch name (basic check)
-        if not re.match(r'^[a-zA-Z0-9_\-/]+$', new_branch):
-            return jsonify({
-                'success': False,
-                'error': 'Invalid branch name'
-            }), 400
-        
-        # Get current branch
-        current_branch = get_current_branch()
-        if current_branch == new_branch:
-            return jsonify({
-                'success': False,
-                'error': f'Already on branch {new_branch}'
-            }), 400
-        
-        # Try to switch branch using git
-        git_cmd = find_git_executable()
-        if not git_cmd:
-            return jsonify({
-                'success': False,
-                'error': 'Git command not available'
-            }), 500
-        
-        install_dir = Path(get_install_dir())
-        
-        try:
-            # Stash any local changes to tracked files only to avoid conflicts
-            # IMPORTANT: Do NOT use -u or -a flags — those stash untracked/ignored files
-            # which includes user-uploaded memes in files/
-            result = subprocess.run(
-                [git_cmd, 'stash', 'push', '-m', f'Auto-stash before switching to {new_branch}'],
-                cwd=str(install_dir),
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            stashed = 'No local changes to save' not in result.stdout
-            if stashed:
-                app.logger.info(f"Stashed local tracked changes before branch switch")
-            
-            # Fetch latest from origin (including tags for releases)
-            result = subprocess.run(
-                [git_cmd, 'fetch', 'origin', '--tags'],
-                cwd=str(install_dir),
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode != 0:
-                app.logger.error(f"git fetch failed: {result.stderr}")
-                return jsonify({
-                    'success': False,
-                    'error': f'Failed to fetch from origin: {result.stderr}'
-                }), 500
-            
-            # Force checkout the branch (discard any remaining local changes)
-            result = subprocess.run(
-                [git_cmd, 'checkout', '-f', new_branch],
-                cwd=str(install_dir),
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode != 0:
-                # Branch doesn't exist locally, create it from origin
-                result = subprocess.run(
-                    [git_cmd, 'checkout', '-b', new_branch, f'origin/{new_branch}'],
-                    cwd=str(install_dir),
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                
-                if result.returncode != 0:
-                    app.logger.error(f"git checkout failed: {result.stderr}")
-                    return jsonify({
-                        'success': False,
-                        'error': f'Failed to checkout branch: {result.stderr}'
-                    }), 500
-            
-            # Now update to latest code based on branch type
-            if new_branch == 'dev':
-                # For dev branch: reset to latest origin/dev (matching perform_update pattern)
-                result = subprocess.run(
-                    [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
-                    cwd=str(install_dir),
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                
-                if result.returncode != 0:
-                    app.logger.warning(f"git reset failed: {result.stderr}")
-                else:
-                    app.logger.info(f"Switched to dev branch and reset to latest commit")
-            else:
-                # For beta/main: checkout latest release tag
-                try:
-                    import requests
-                    github_repo = os.environ.get('GITHUB_REPO', 'toomanynights/memelet')
-                    
-                    # Get latest release for this branch
-                    releases_url = f'https://api.github.com/repos/{github_repo}/releases'
-                    response = requests.get(releases_url, timeout=10)
-                    
-                    if response.status_code == 200:
-                        releases = response.json()
-                        
-                        # Filter releases for this branch (beta releases have -beta suffix)
-                        if new_branch == 'beta':
-                            matching_releases = [r for r in releases if '-beta' in r.get('tag_name', '')]
-                        else:
-                            matching_releases = [r for r in releases if '-beta' not in r.get('tag_name', '')]
-                        
-                        if matching_releases:
-                            latest_release = matching_releases[0]
-                            latest_tag = latest_release.get('tag_name', '')
-                            
-                            if latest_tag:
-                                # Checkout the release tag
-                                result = subprocess.run(
-                                    [git_cmd, 'checkout', '-f', latest_tag],
-                                    cwd=str(install_dir),
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=30
-                                )
-                                
-                                if result.returncode == 0:
-                                    app.logger.info(f"Checked out release tag {latest_tag} for branch {new_branch}")
-                                else:
-                                    app.logger.warning(f"Failed to checkout tag {latest_tag}, staying on branch HEAD")
-                                    # Reset to origin branch HEAD
-                                    subprocess.run(
-                                        [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
-                                        cwd=str(install_dir),
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=30
-                                    )
-                            else:
-                                # No tag found, reset to origin branch HEAD
-                                subprocess.run(
-                                    [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
-                                    cwd=str(install_dir),
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=30
-                                )
-                        else:
-                            # No releases found for this branch, reset to origin branch HEAD
-                            app.logger.info(f"No releases found for branch {new_branch}, using branch HEAD")
-                            subprocess.run(
-                                [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
-                                cwd=str(install_dir),
-                                capture_output=True,
-                                text=True,
-                                timeout=30
-                            )
-                    else:
-                        # GitHub API failed, reset to origin branch HEAD
-                        app.logger.warning(f"GitHub API failed, using branch HEAD")
-                        subprocess.run(
-                            [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
-                            cwd=str(install_dir),
-                            capture_output=True,
-                            text=True,
-                            timeout=30
-                        )
-                except Exception as e:
-                    app.logger.warning(f"Failed to get latest release: {e}, using branch HEAD")
-                    # Reset to origin branch HEAD as fallback
-                    subprocess.run(
-                        [git_cmd, 'reset', '--hard', f'origin/{new_branch}'],
-                        cwd=str(install_dir),
-                        capture_output=True,
-                        text=True,
-                        timeout=30
-                    )
-            
-            # Restore clippy after branch switch.
-            # git-submodule is a shell script with its own PATH requirements which
-            # are unreliable in a systemd environment. Instead, we directly clone
-            # the clippy repo if its contents were wiped by the checkout.
-            clippy_dir = Path(install_dir) / 'static' / 'clippy'
-            clippy_src = clippy_dir / 'src'
-            clippy_agents = clippy_dir / 'agents'
-            
-            needs_restore = not clippy_src.exists() or not any(clippy_src.iterdir())
-            app.logger.info(f"Clippy restore needed after branch switch: {needs_restore}")
-            
-            if needs_restore:
-                app.logger.info("Clippy content missing after branch switch - re-cloning...")
-                if clippy_dir.exists():
-                    shutil.rmtree(clippy_dir)
-                
-                clippy_url = 'https://github.com/toomanynights/clippy.js'
-                clone_result = subprocess.run(
-                    [git_cmd, 'clone', '--depth', '1', clippy_url, str(clippy_dir)],
-                    capture_output=True, text=True, timeout=120
-                )
-                if clone_result.returncode != 0:
-                    app.logger.error(f"Failed to re-clone clippy: {clone_result.stderr}")
-                    return jsonify({
-                        'success': False,
-                        'error': f'Failed to restore clippy: {clone_result.stderr}'
-                    }), 500
-                app.logger.info(f"Clippy re-cloned successfully - src/ has {len(list(clippy_src.glob('*')))} items, agents/ has {len(list(clippy_agents.glob('*')))} dirs")
-            else:
-                app.logger.info(f"Clippy OK - src/ has {len(list(clippy_src.glob('*')))} items, agents/ has {len(list(clippy_agents.glob('*')))} dirs")
-            
-            # Update branch in database
-            set_current_branch(new_branch)
-            
-            # Clear current_version to force re-detection
-            try:
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute(
-                    "UPDATE settings SET value = NULL WHERE key = 'current_version'"
-                )
-                conn.commit()
-                conn.close()
-            except Exception as e:
-                app.logger.warning(f"Could not clear current_version: {e}")
-            
-            app.logger.info(f"Branch changed from {current_branch} to {new_branch}")
-            
-            # Get version message based on branch type
-            if new_branch == 'dev':
-                version_msg = 'latest commit'
-            else:
-                version_msg = 'latest release'
-            
-            return jsonify({
-                'success': True,
-                'message': f'Successfully switched to branch {new_branch} ({version_msg}). Please restart the application to apply changes.',
-                'branch': new_branch,
-                'requires_restart': True
-            })
-        
-        except subprocess.TimeoutExpired:
-            app.logger.error("Git command timed out")
-            return jsonify({
-                'success': False,
-                'error': 'Git command timed out'
-            }), 500
-        except Exception as e:
-            app.logger.error(f"Error changing branch: {e}")
-            return jsonify({
-                'success': False,
-                'error': str(e)
-            }), 500
-    
-    except Exception as e:
-        app.logger.error(f"Error in change_branch: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/settings/version', methods=['GET'])
 @login_required
@@ -3757,24 +2773,10 @@ def get_version_info():
                             if db_branch != git_branch:
                                 set_current_branch(git_branch)
                                 app.logger.info(f"Synced branch from config.json: {git_branch}")
-                                
-                                # When branch changes, clear current_version to force re-detection from git tags
-                                try:
-                                    conn = get_db_connection()
-                                    cursor = conn.cursor()
-                                    cursor.execute(
-                                        "UPDATE settings SET value = NULL WHERE key = 'current_version'"
-                                    )
-                                    conn.commit()
-                                    conn.close()
-                                    app.logger.info(f"Cleared current_version to force re-detection for branch {git_branch}")
-                                except Exception as e:
-                                    app.logger.warning(f"Could not clear current_version: {e}")
             except Exception as e:
                 app.logger.warning(f"Could not sync branch from config.json: {e}")
         
         current_branch = get_current_branch()
-        app.logger.info(f"get_version_info(): current_branch={current_branch}, INSTANCE_NAME={app.config.get('INSTANCE_NAME', 'NOT_SET')}")
         
         # For dev branch, show commit hash instead of version
         if current_branch == 'dev':
@@ -3787,40 +2789,30 @@ def get_version_info():
                 # Check if .git exists to give better error message
                 install_dir = Path(get_install_dir())
                 git_dir = install_dir / '.git'
-                # Check if git command is available
-                git_cmd = find_git_executable()
-                git_available = git_cmd is not None
-                
                 if not git_dir.exists():
                     # Not a git repository - can't show commit info
                     current_version = "Not a git repository"
-                elif not git_available:
-                    # Git repo exists but git command not available
-                    current_version = "Git command not available"
                 else:
-                    # Git repo exists but commit info failed - try git tag detection
+                    # Git repo exists but commit info failed - use CHANGELOG as fallback
                     current_version = get_current_version()
                     if not current_version:
-                        git_version = get_version_from_git()
-                        if git_version:
-                            set_current_version(git_version)
-                            current_version = git_version
+                        changelog_version = get_version_from_changelog()
+                        if changelog_version:
+                            set_current_version(changelog_version)
+                            current_version = changelog_version
         else:
-            # For other branches, sync version from git tags if not set
+            # For other branches, sync version from CHANGELOG.md if not set
             current_version = get_current_version()
             if not current_version:
-                # Try to get version from git tags and update database
-                git_version = get_version_from_git()
-                if git_version:
-                    set_current_version(git_version)
-                    current_version = git_version
-                    app.logger.info(f"Synced version from git tags: {git_version}")
+                # Try to get version from CHANGELOG.md and update database
+                changelog_version = get_version_from_changelog()
+                if changelog_version:
+                    set_current_version(changelog_version)
+                    current_version = changelog_version
+                    app.logger.info(f"Synced version from CHANGELOG.md: {changelog_version}")
         
-        app.logger.info(f"get_version_info(): calling get_available_version()")
         available_version = get_available_version()
-        app.logger.info(f"get_version_info(): get_available_version() returned={available_version}")
         update_info = check_for_updates()
-        app.logger.info(f"get_version_info(): check_for_updates() returned update_available={update_info.get('update_available')}, needs_update={update_info.get('needs_update')}")
         
         # Update last_update_check timestamp (we just checked for updates)
         set_last_update_check()
@@ -3836,9 +2828,6 @@ def get_version_info():
         except Exception:
             last_update_check = None
         
-        # Check if release notes should be shown
-        show_release_notes = should_show_release_notes(current_version)
-        
         return jsonify({
             'success': True,
             'current_version': current_version,
@@ -3846,80 +2835,10 @@ def get_version_info():
             'available_version': available_version,
             'update_available': update_info['update_available'],
             'needs_update': update_info['needs_update'],
-            'last_update_check': last_update_check,
-            'show_release_notes': show_release_notes
+            'last_update_check': last_update_check
         })
     except Exception as e:
         app.logger.error(f"Error getting version info: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/release-notes/<version>', methods=['GET'])
-@login_required
-def get_release_notes(version):
-    """Get release notes from GitHub for a specific version."""
-    try:
-        import requests
-        github_repo = os.environ.get('GITHUB_REPO', 'toomanynights/memelet')
-        
-        # Try to find release by tag
-        tag = f'v{version}'
-        releases_url = f'https://api.github.com/repos/{github_repo}/releases/tags/{tag}'
-        
-        response = requests.get(releases_url, timeout=10)
-        if response.status_code == 200:
-            release_data = response.json()
-            return jsonify({
-                'success': True,
-                'version': version,
-                'title': release_data.get('name', f'Release {version}'),
-                'body': release_data.get('body', ''),
-                'published_at': release_data.get('published_at', ''),
-                'html_url': release_data.get('html_url', '')
-            })
-        
-        # If tag not found, try latest release
-        if response.status_code == 404:
-            latest_url = f'https://api.github.com/repos/{github_repo}/releases/latest'
-            latest_response = requests.get(latest_url, timeout=10)
-            if latest_response.status_code == 200:
-                latest_data = latest_response.json()
-                latest_tag = latest_data.get('tag_name', '').lstrip('v')
-                if latest_tag == version:
-                    return jsonify({
-                        'success': True,
-                        'version': version,
-                        'title': latest_data.get('name', f'Release {version}'),
-                        'body': latest_data.get('body', ''),
-                        'published_at': latest_data.get('published_at', ''),
-                        'html_url': latest_data.get('html_url', '')
-                    })
-        
-        return jsonify({
-            'success': False,
-            'error': f'Release notes not found for version {version}'
-        }), 404
-        
-    except requests.exceptions.RequestException as e:
-        app.logger.warning(f"Error fetching release notes from GitHub: {e}")
-        return jsonify({
-            'success': False,
-            'error': 'Failed to fetch release notes from GitHub'
-        }), 500
-    except Exception as e:
-        app.logger.error(f"Error getting release notes: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/release-notes/<version>/dismiss', methods=['POST'])
-@login_required
-def dismiss_release_notes_endpoint(version):
-    """Mark release notes as dismissed for a specific version."""
-    try:
-        if dismiss_release_notes(version):
-            return jsonify({'success': True, 'message': f'Release notes for {version} dismissed'})
-        else:
-            return jsonify({'success': False, 'error': 'Failed to dismiss release notes'}), 500
-    except Exception as e:
-        app.logger.error(f"Error dismissing release notes: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/settings/replicate-usage', methods=['GET'])
@@ -4160,70 +3079,17 @@ def change_password():
         conn.close()
         return jsonify({'success': False, 'error': 'Current password is incorrect'}), 400
     
-    # Update password and set password_updated timestamp
-    from datetime import datetime
+    # Update password
     new_password_hash = generate_password_hash(new_password)
-    password_updated = datetime.now().isoformat()
     cursor.execute(
-        "UPDATE users SET password_hash = ?, password_updated = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (new_password_hash, password_updated, current_user.id)
+        "UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (new_password_hash, current_user.id)
     )
     
     conn.commit()
     conn.close()
     
     return jsonify({'success': True, 'message': 'Password changed successfully'})
-
-@app.route('/api/settings/change-username', methods=['POST'])
-@login_required
-def change_username():
-    """Change username"""
-    data = request.get_json()
-    new_username = data.get('new_username', '').strip().lower()
-    
-    if not new_username:
-        return jsonify({'success': False, 'error': 'Username is required'}), 400
-    
-    # Validate username format (same as registration)
-    if not re.match(r'^[a-z0-9]+$', new_username):
-        return jsonify({'success': False, 'error': 'Username must contain only lowercase letters and numbers'}), 400
-    
-    if len(new_username) < 3 or len(new_username) > 20:
-        return jsonify({'success': False, 'error': 'Username must be 3-20 characters'}), 400
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Check if new username is already taken
-    cursor.execute("SELECT id FROM users WHERE username = ? AND id != ?", (new_username, current_user.id))
-    if cursor.fetchone():
-        conn.close()
-        return jsonify({'success': False, 'error': 'Username is already taken'}), 400
-    
-    # Get current username for logging
-    cursor.execute("SELECT username FROM users WHERE id = ?", (current_user.id,))
-    old_username_row = cursor.fetchone()
-    old_username = old_username_row['username'] if old_username_row else 'unknown'
-    
-    # Update username
-    cursor.execute(
-        "UPDATE users SET username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (new_username, current_user.id)
-    )
-    
-    conn.commit()
-    conn.close()
-    
-    app.logger.info(f"User {old_username} (ID: {current_user.id}) changed username to {new_username}")
-    
-    # Update Flask-Login user object
-    current_user.username = new_username
-    
-    return jsonify({
-        'success': True, 
-        'message': f'Username changed successfully to {new_username}',
-        'new_username': new_username
-    })
 
 @app.route('/api/settings/privacy-mode', methods=['GET'])
 @login_required

@@ -6,6 +6,7 @@ import sys
 import json
 import sqlite3
 import argparse
+import re
 import replicate
 from pathlib import Path
 from datetime import datetime
@@ -65,6 +66,8 @@ USER_PROMPT_TAGS_FROM_TEXT = (
     '{tags: "Use ONLY the tags from the provided list below. Provide a comma-separated list of tags that fit. Do NOT invent new tags. If none fit, omit this property."}'
 )
 
+JSON_RETRY_ATTEMPTS = 2
+
 def _normalize_for_db(value):
     """Convert AI response values to plain strings acceptable by SQLite."""
     if value is None:
@@ -83,6 +86,244 @@ def _normalize_for_db(value):
         return json.dumps(value, ensure_ascii=False)
     except Exception:
         return str(value)
+
+def _extract_first_json_object(text: str) -> str:
+    """Extract first complete top-level JSON object from text."""
+    in_string = False
+    escape = False
+    depth = 0
+    start_idx = None
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            if depth == 0:
+                start_idx = i
+            depth += 1
+            continue
+        if ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start_idx is not None:
+                    return text[start_idx:i + 1]
+    return text
+
+def _escape_literal_newlines_in_strings(text: str) -> str:
+    """Escape bare newlines/carriage-returns that appear inside JSON string values.
+
+    The model sometimes emits a verbatim line-break mid-string (e.g. multi-line
+    quotes), which is invalid JSON.  This walk tracks string context and replaces
+    any such bare control characters with their JSON escape equivalents.
+    """
+    result = []
+    in_string = False
+    escape_next = False
+    for ch in text:
+        if escape_next:
+            result.append(ch)
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            result.append(ch)
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            result.append(ch)
+            continue
+        if in_string and ch == "\n":
+            result.append("\\n")
+            continue
+        if in_string and ch == "\r":
+            result.append("\\r")
+            continue
+        result.append(ch)
+    return "".join(result)
+
+def _clean_model_json_response(raw_output) -> str:
+    """Normalize model output to a JSON string candidate."""
+    if isinstance(raw_output, list):
+        raw_output = "".join(str(part) for part in raw_output)
+    text = str(raw_output or "").strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    text = _escape_literal_newlines_in_strings(text.strip())
+    return _extract_first_json_object(text).strip()
+
+def _scan_json_state(text: str):
+    """Return parser state for JSON-like text."""
+    in_string = False
+    escape = False
+    brace_depth = 0
+    bracket_depth = 0
+    for ch in text:
+        if in_string:
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            brace_depth += 1
+        elif ch == "}":
+            if brace_depth > 0:
+                brace_depth -= 1
+        elif ch == "[":
+            bracket_depth += 1
+        elif ch == "]":
+            if bracket_depth > 0:
+                bracket_depth -= 1
+    return in_string, brace_depth, bracket_depth
+
+def _finalize_truncated_json(candidate: str) -> str:
+    """Attempt to close truncated JSON by balancing quotes/brackets/braces."""
+    text = (candidate or "").strip()
+    if not text:
+        return text
+
+    # Remove clearly incomplete trailing separators.
+    while text.endswith((",", ":")):
+        text = text[:-1].rstrip()
+
+    in_string, brace_depth, bracket_depth = _scan_json_state(text)
+    if in_string:
+        text += '"'
+
+    # Re-scan after quote close, then append missing closers.
+    _, brace_depth, bracket_depth = _scan_json_state(text)
+    if bracket_depth > 0:
+        text += "]" * bracket_depth
+    if brace_depth > 0:
+        text += "}" * brace_depth
+    return text
+
+def _generate_json_repair_candidates(cleaned: str):
+    """Produce a small set of progressively repaired JSON candidates."""
+    candidates = []
+    seen = set()
+
+    def push(value):
+        if value and value not in seen:
+            candidates.append(value)
+            seen.add(value)
+
+    push(cleaned)
+    push(_finalize_truncated_json(cleaned))
+
+    working = cleaned
+    for _ in range(8):
+        idx = max(working.rfind(","), working.rfind("\n"))
+        if idx <= 0:
+            break
+        working = working[:idx].rstrip()
+        push(_finalize_truncated_json(working))
+
+    return candidates
+
+def _extract_json_like_fields(text: str):
+    """Fallback field extractor for malformed JSON-like model responses."""
+    if not text:
+        return None
+    keys = ("references", "template", "caption", "description", "meaning", "tags")
+    extracted = {}
+    for key in keys:
+        # Properly closed quoted value
+        m = re.search(
+            rf'["\']?{key}["\']?\s*:\s*"((?:\\.|[^"\\])*)"',
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if m:
+            value = m.group(1).replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
+            extracted[key] = value.strip()
+            continue
+
+        # Array value (helpful for tags)
+        m = re.search(
+            rf'["\']?{key}["\']?\s*:\s*\[([^\]]*)\]',
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if m:
+            raw_items = [part.strip() for part in m.group(1).split(",") if part.strip()]
+            items = [item.strip(' "\'') for item in raw_items if item.strip(' "\'')]
+            extracted[key] = items
+            continue
+
+        # Bare scalar value
+        m = re.search(
+            rf'["\']?{key}["\']?\s*:\s*([^,\n\}}]+)',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            extracted[key] = m.group(1).strip(' "\'')
+
+    return extracted or None
+
+def _parse_model_json_response(raw_output):
+    """Parse model output JSON with cleanup/repair helpers."""
+    cleaned = _clean_model_json_response(raw_output)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as first_error:
+        # Try repaired/truncated variants before failing.
+        for candidate in _generate_json_repair_candidates(cleaned):
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+
+        # Last resort: salvage any complete fields from malformed JSON-like text.
+        extracted = _extract_json_like_fields(cleaned)
+        if extracted:
+            return extracted
+        raise first_error
+
+def _is_clean_json(raw_output) -> bool:
+    """Return True if the model output parses as valid JSON without any repair."""
+    try:
+        json.loads(_clean_model_json_response(raw_output))
+        return True
+    except (json.JSONDecodeError, Exception):
+        return False
+
+def _print_full_ai_response_for_error(meme_id: int, media_type: str, attempt: int, raw_output, parse_error):
+    """Print full AI response block into stdout (captured in scan.log)."""
+    try:
+        if isinstance(raw_output, list):
+            raw_text = "".join(str(part) for part in raw_output)
+        else:
+            raw_text = str(raw_output if raw_output is not None else "")
+    except Exception:
+        raw_text = "<failed to stringify raw response>"
+
+    print("----- AI RAW RESPONSE BEGIN -----")
+    print(
+        f"meme_id={meme_id} media_type={media_type} attempt={attempt} "
+        f"parse_error={parse_error}"
+    )
+    print(raw_text)
+    print("----- AI RAW RESPONSE END -----")
 
 def get_db_connection():
     """Get database connection with dynamic path for multi-tenant support"""
@@ -324,24 +565,13 @@ def ai_suggest_and_apply_tags_from_text(meme_id: int):
         input_data = {
             "prompt": full_prompt,
             "system_prompt": SYSTEM_PROMPT,
-            "temperature": 1,
+            "temperature": 0.2,
             "top_p": 1,
             "max_completion_tokens": 512,
         }
         print("  → Requesting AI tag suggestions from text only")
         output = replicate.run("openai/gpt-4.1-mini", input=input_data)
-        if isinstance(output, list):
-            output = "".join(output).strip()
-        result_clean = str(output).strip()
-        if result_clean.startswith("```json"):
-            result_clean = result_clean[7:]
-        elif result_clean.startswith("```"):
-            result_clean = result_clean[3:]
-        if result_clean.endswith("```"):
-            result_clean = result_clean[:-3]
-        result_clean = result_clean.strip()
-
-        data = json.loads(result_clean)
+        data = _parse_model_json_response(output)
         suggested_value = data.get("tags")
         suggested_names = _parse_ai_suggested_tag_names(suggested_value)
         if not suggested_names:
@@ -1064,6 +1294,97 @@ def extract_video_frames(video_path, fps=2, max_frames=20):
         print(f"  ✗ Video frame extraction failed: {e}")
         return [], None
 
+def _run_replicate_prediction(input_data: dict):
+    """Run a Replicate prediction and return its output list.
+
+    Uses predictions.create() + wait() instead of run() so we can inspect the
+    finish reason.  Raises a descriptive exception when the model stops early due
+    to a content-filter hit (commonly caused by a failed NSFW image format check).
+    """
+    prediction = replicate.predictions.create(
+        model="openai/gpt-4.1-mini",
+        input=input_data,
+    )
+    prediction.wait()
+
+    if prediction.status == "failed":
+        raise Exception(f"Replicate prediction failed: {prediction.error}")
+
+    logs = prediction.logs or ""
+    finish_reason = None
+    for line in logs.splitlines():
+        if line.startswith("Finish reason:"):
+            finish_reason = line.split(":", 1)[1].strip()
+            break
+
+    print(f"  ℹ️ Replicate finish_reason={finish_reason!r}")
+
+    if finish_reason == "content_filter":
+        nsfw_warning = next(
+            (l for l in logs.splitlines() if "NSFW check failed" in l), None
+        )
+        detail = f" ({nsfw_warning})" if nsfw_warning else ""
+        raise Exception(
+            f"Replicate content_filter stopped generation{detail}. "
+            "The image format may be incompatible with the model's safety check. "
+            "Try converting the image to a standard RGB PNG/JPEG."
+        )
+
+    return prediction.output
+
+
+def _run_replicate_prediction_gemini(input_data: dict):
+    """Run a Gemini-2.5-Flash prediction as fallback.
+
+    Translates GPT-4.1-mini input field names to Gemini equivalents and calls
+    predictions.create() + wait() the same way as the primary helper.
+    """
+    gemini_input = {
+        "prompt": input_data.get("prompt", ""),
+        "images": input_data.get("image_input", []),
+        "videos": [],
+        "system_instruction": input_data.get("system_prompt", ""),
+        "temperature": input_data.get("temperature", 0.2),
+        "top_p": input_data.get("top_p", 1),
+        "max_output_tokens": 8192,
+        "dynamic_thinking": False,
+    }
+    prediction = replicate.predictions.create(
+        model="google/gemini-2.5-flash",
+        input=gemini_input,
+    )
+    prediction.wait()
+
+    logs = prediction.logs or ""
+    print(f"  ℹ️ Gemini logs: {logs.strip()}")
+
+    if prediction.status == "failed":
+        raise Exception(f"Gemini prediction failed: {prediction.error}")
+
+    return prediction.output
+
+
+def _run_with_fallback(input_data: dict, label: str, gemini_image_urls=None) -> tuple:
+    """Try primary model; fall back to Gemini on any failure.
+
+    gemini_image_urls: if provided, overrides image_input for the Gemini call.
+      Use this when the primary set exceeds Gemini's image limit and a smarter
+      re-extraction has already been done at Gemini-compatible density.
+
+    Returns (output, model_used) where model_used is 'primary' or 'gemini'.
+    """
+    try:
+        output = _run_replicate_prediction(input_data)
+        return output, "primary"
+    except Exception as primary_err:
+        print(f"  ⚠️ Primary model failed ({primary_err}); falling back to Gemini 2.5 Flash for {label}…")
+        gemini_input = dict(input_data)
+        if gemini_image_urls is not None:
+            gemini_input = dict(input_data, image_input=gemini_image_urls)
+        output = _run_replicate_prediction_gemini(gemini_input)
+        return output, "gemini"
+
+
 def analyze_meme(file_path, media_type, album_items=None):
     """Send meme to Replicate for analysis"""
     # Check if AI functions are enabled
@@ -1108,13 +1429,15 @@ def analyze_meme(file_path, media_type, album_items=None):
                 "prompt": _build_prompt_with_tag_suggestions(USER_PROMPT_ALBUM),
                 "image_input": image_urls,
                 "system_prompt": SYSTEM_PROMPT,
-                "temperature": 1,
+                "temperature": 0.2,
                 "top_p": 1,
                 "max_completion_tokens": 2048
             }
             
             print(f"  → Sending {len(image_urls)} album images to Replicate")
-            output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+            output, model_used = _run_with_fallback(input_data, f"album id={id(file_path)}")
+            if model_used == "gemini":
+                print("  ℹ️ Result from Gemini fallback")
             
         elif media_type == 'gif':
             # Extract frames from GIF
@@ -1129,16 +1452,19 @@ def analyze_meme(file_path, media_type, album_items=None):
                 "prompt": _build_prompt_with_tag_suggestions(USER_PROMPT_GIF),
                 "image_input": frame_urls,
                 "system_prompt": SYSTEM_PROMPT,
-                "temperature": 1,
+                "temperature": 0.2,
                 "top_p": 1,
                 "max_completion_tokens": 2048
             }
             
+            # GIFs are already extracted at max 10 frames, fine for both models
             print(f"  → Sending {len(frame_urls)} frames to Replicate")
-            output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+            output, model_used = _run_with_fallback(input_data, f"gif {Path(file_path).name}")
+            if model_used == "gemini":
+                print("  ℹ️ Result from Gemini fallback")
             
         elif media_type == 'video':
-            # Extract frames from video
+            # Extract frames from video (higher density for primary model)
             print(f"  → Extracting frames from video: {media_url}")
             frame_urls, temp_dir = extract_video_frames(file_path, fps=2, max_frames=20)
             
@@ -1150,13 +1476,22 @@ def analyze_meme(file_path, media_type, album_items=None):
                 "prompt": _build_prompt_with_tag_suggestions(USER_PROMPT_GIF),
                 "image_input": frame_urls,
                 "system_prompt": SYSTEM_PROMPT,
-                "temperature": 1,
+                "temperature": 0.2,
                 "top_p": 1,
                 "max_completion_tokens": 2048
             }
             
+            # Gemini allows max 10 images — re-extract at lower density so frames
+            # are evenly distributed across the full video duration, not just the first half.
             print(f"  → Sending {len(frame_urls)} frames to Replicate")
-            output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+            gemini_frame_urls, _ = extract_video_frames(file_path, fps=1, max_frames=10)
+            output, model_used = _run_with_fallback(
+                input_data,
+                f"video {Path(file_path).name}",
+                gemini_image_urls=gemini_frame_urls or frame_urls[:10],
+            )
+            if model_used == "gemini":
+                print(f"  ℹ️ Result from Gemini fallback ({len(gemini_frame_urls or frame_urls[:10])} frames)")
             
         else:
             # Use image model for static images
@@ -1164,13 +1499,15 @@ def analyze_meme(file_path, media_type, album_items=None):
                 "prompt": _build_prompt_with_tag_suggestions(USER_PROMPT_IMAGE),
                 "image_input": [media_url],
                 "system_prompt": SYSTEM_PROMPT,
-                "temperature": 1,
+                "temperature": 0.2,
                 "top_p": 1,
                 "max_completion_tokens": 2048
             }
             
             print(f"  → Sending to Replicate (Image): {media_url}")
-            output = replicate.run("openai/gpt-4.1-mini", input=input_data)
+            output, model_used = _run_with_fallback(input_data, Path(file_path).name)
+            if model_used == "gemini":
+                print("  ℹ️ Result from Gemini fallback")
         
         return output
         
@@ -1216,43 +1553,42 @@ def process_meme(meme_id, file_path, media_type):
             
             print(f"  → Album contains {len(album_items)} images")
         
-        # Get analysis from Replicate
-        result = analyze_meme(file_path, media_type, album_items=album_items)
-        
-        # Check if AI is disabled (analyze_meme returns None)
-        if result is None:
-            print("  ℹ️ AI disabled - marking as 'done' without AI-generated fields")
-            cursor.execute("""
-                UPDATE memes 
-                SET status = 'done',
-                    error_message = NULL,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (meme_id,))
-            conn.commit()
-            conn.close()
-            print(f"✅ Marked as done (AI disabled)\n")
-            return
-        
-        # Convert list to string (if needed)
-        if isinstance(result, list):
-            result = "".join(result).strip()
-        
-        print(f"📝 Raw response: {result[:200]}...")
-        
-        # Parse JSON response (handle markdown code blocks)
-        result_clean = result.strip()
-        
-        # Remove markdown code blocks if present
-        if result_clean.startswith("```json"):
-            result_clean = result_clean[7:]
-        elif result_clean.startswith("```"):
-            result_clean = result_clean[3:]
-        if result_clean.endswith("```"):
-            result_clean = result_clean[:-3]
-        result_clean = result_clean.strip()
-        
-        data = json.loads(result_clean)
+        data = None
+        last_json_error = None
+        for attempt in range(1, JSON_RETRY_ATTEMPTS + 1):
+            result = analyze_meme(file_path, media_type, album_items=album_items)
+
+            # Check if AI is disabled (analyze_meme returns None)
+            if result is None:
+                print("  ℹ️ AI disabled - marking as 'done' without AI-generated fields")
+                cursor.execute("""
+                    UPDATE memes 
+                    SET status = 'done',
+                        error_message = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (meme_id,))
+                conn.commit()
+                conn.close()
+                print(f"✅ Marked as done (AI disabled)\n")
+                return
+
+            result_preview = str(result)
+            print(f"📝 Raw response (attempt {attempt}/{JSON_RETRY_ATTEMPTS}): {result_preview[:200]}...")
+            try:
+                data = _parse_model_json_response(result)
+                if not _is_clean_json(result):
+                    # Repair/salvage succeeded but original was malformed — still log it.
+                    _print_full_ai_response_for_error(meme_id, media_type, attempt, result, "repaired/salvaged (not clean JSON)")
+                break
+            except json.JSONDecodeError as e:
+                last_json_error = e
+                _print_full_ai_response_for_error(meme_id, media_type, attempt, result, e)
+                if attempt < JSON_RETRY_ATTEMPTS:
+                    print(f"  ⚠️ JSON parse failed (attempt {attempt}), retrying analysis once...")
+
+        if data is None and last_json_error is not None:
+            raise last_json_error
         
         # Update database with results
         cursor.execute("""

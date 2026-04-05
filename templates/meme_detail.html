@@ -4,33 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ (meme.title if meme.media_type == 'album' and meme.title) or meme.file_name }} - Memelet</title>
-    <!-- Open Graph / Social Media Preview -->
-    {% set og_title = (meme.title if meme.media_type == 'album' and meme.title) or meme.file_name %}
-    {% set og_description = (meme.description or meme.caption or '') | truncate(300, True, '…') %}
-    {% set og_image = (album_items[0].url if album_items else meme.image_url) if meme.media_type == 'album' else meme.image_url %}
-    <meta property="og:type" content="website">
-    <meta property="og:site_name" content="Memelet">
-    <meta property="og:url" content="{{ request.url }}">
-    <meta property="og:title" content="{{ og_title }}">
-    {% if og_description %}
-    <meta property="og:description" content="{{ og_description }}">
-    {% endif %}
-    {% if og_image %}
-    <meta property="og:image" content="{{ og_image }}">
-    {% endif %}
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="{{ og_title }}">
-    {% if og_description %}
-    <meta name="twitter:description" content="{{ og_description }}">
-    {% endif %}
-    {% if og_image %}
-    <meta name="twitter:image" content="{{ og_image }}">
-    {% endif %}
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/meme_detail.css') }}">
     {% if clippy_agent and clippy_agent != 'none' %}
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/src/clippy.css') }}" media="all">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='clippy/build/clippy.css') }}" media="all">
     {% endif %}
     <style>
         @media (max-width: 600px) {
@@ -116,7 +94,7 @@
                 </div>
                 {% if current_user.is_authenticated %}
                 <div style="margin-top: 15px; display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
-                    <button type="button" class="btn btn-warning" onclick="processThisMeme()">🕵️‍♂️ Analyze This Meme</button>
+                    <button type="button" id="processMemeBtn" class="btn btn-warning" onclick="processThisMeme()">🕵️‍♂️ Analyze This Meme</button>
                     <span id="processStatus" data-initial-updated-at="{{ meme.updated_at or '' }}" style="color:#718096; font-size:0.9rem;"></span>
                     <button type="button" class="btn" onclick="scanTagsThisMeme()">🔎 Scan Tags</button>
                     <span id="tagScanStatus" data-initial-updated-at="{{ meme.updated_at or '' }}" style="color:#718096; font-size:0.9rem;"></span>
@@ -307,7 +285,12 @@
         })();
 
         function processThisMeme() {
+            const buttonEl = document.getElementById('processMemeBtn');
             const statusEl = document.getElementById('processStatus');
+            if (buttonEl && buttonEl.disabled) {
+                return;
+            }
+            if (buttonEl) buttonEl.disabled = true;
             statusEl.textContent = 'Starting…';
             fetch(`${BASE_URL}/api/memes/{{ meme.id }}/process`, {
                 method: 'POST',
@@ -323,6 +306,7 @@
             })
             .catch(err => {
                 statusEl.textContent = 'Error: ' + err.message;
+                if (buttonEl) buttonEl.disabled = false;
             });
         }
 
@@ -489,13 +473,17 @@
         let pollTimer = null;
         let seenProcessing = false;
         let firstSeenUpdatedAt = null;
+        let processPollTicks = 0;
         function startMemePolling(){
             if (pollTimer) clearInterval(pollTimer);
             seenProcessing = false;
             firstSeenUpdatedAt = null;
+            processPollTicks = 0;
             const statusEl = document.getElementById('processStatus');
+            const buttonEl = document.getElementById('processMemeBtn');
             const id = {{ meme.id }};
             const baselineUpdatedAt = statusEl.getAttribute('data-initial-updated-at') || '';
+            const maxTicks = 180; // ~3 minutes
             function applyValues(m){
                 const map = [
                     ['caption','caption'],
@@ -555,6 +543,7 @@
                                             statusEl.textContent = 'Completed';
                                             clearInterval(pollTimer);
                                             pollTimer = null;
+                                            if (buttonEl) buttonEl.disabled = false;
                                         });
                                   }, 300);
                               } else {
@@ -562,11 +551,25 @@
                                   statusEl.textContent = 'Processing…';
                               }
                           } else if (st === 'error'){
-                              statusEl.textContent = 'Error: ' + (m.error_message || 'Processing failed');
-                              clearInterval(pollTimer);
-                              pollTimer = null;
+                              const isFreshError = Boolean(m.updated_at && m.updated_at !== baselineUpdatedAt);
+                              if (seenProcessing || isFreshError) {
+                                  statusEl.textContent = 'Error: ' + (m.error_message || 'Processing failed');
+                                  clearInterval(pollTimer);
+                                  pollTimer = null;
+                                  if (buttonEl) buttonEl.disabled = false;
+                              } else {
+                                  // Treat as stale pre-existing error while waiting for this run to actually start.
+                                  statusEl.textContent = 'Processing…';
+                              }
                           } else {
                               statusEl.textContent = 'Processing…';
+                          }
+                          processPollTicks++;
+                          if (processPollTicks >= maxTicks){
+                              clearInterval(pollTimer);
+                              pollTimer = null;
+                              statusEl.textContent = 'Timed out. Please reload to check final status.';
+                              if (buttonEl) buttonEl.disabled = false;
                           }
                       }
                   })
@@ -575,6 +578,7 @@
                       clearInterval(pollTimer);
                       pollTimer = null;
                       statusEl.textContent = 'Error: ' + (e && e.message ? e.message : 'Polling failed');
+                      if (buttonEl) buttonEl.disabled = false;
                   });
             };
             tick();
@@ -684,13 +688,7 @@
     </script>
     {% if clippy_agent and clippy_agent != 'none' %}
     <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
-    <!-- Clippy.js (src modules, load order matters) -->
-    <script src="{{ url_for('static', filename='clippy/src/agent.js') }}"></script>
-    <script src="{{ url_for('static', filename='clippy/src/animator.js') }}"></script>
-    <script src="{{ url_for('static', filename='clippy/src/balloon.js') }}"></script>
-    <script src="{{ url_for('static', filename='clippy/src/load.js') }}"></script>
-    <script src="{{ url_for('static', filename='clippy/src/queue.js') }}"></script>
-    <script>clippy.BASE_PATH = "{{ url_for('static', filename='clippy/agents') }}/";</script>
+    <script src="{{ url_for('static', filename='clippy/build/clippy.js') }}"></script>
     <script src="{{ url_for('static', filename='js/clippy-phrases.js') }}"></script>
     <script src="{{ url_for('static', filename='js/clippy-session.js') }}"></script>
     <script src="{{ url_for('static', filename='js/clippy-debug.js') }}"></script>
