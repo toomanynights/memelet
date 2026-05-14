@@ -157,6 +157,42 @@ sudo systemctl enable memelet
 sudo systemctl start memelet
 ```
 
+### Telegram Bot (optional)
+
+Install the dependency:
+```bash
+pip install python-telegram-bot
+```
+
+Create a bot with [@BotFather](https://t.me/BotFather) and enable inline mode. Then set the token in Memelet → Settings → Telegram Bot and follow the linking instructions there.
+
+To run as a service alongside Memelet, create `/etc/systemd/system/memelet-telegram.service`:
+
+```ini
+[Unit]
+Description=Memelet Telegram Bot
+After=network.target memelet.service
+Requires=memelet.service
+
+[Service]
+Type=simple
+User=your-user
+WorkingDirectory=/path/to/memelet
+Environment="PATH=/path/to/memelet/venv/bin"
+ExecStart=/path/to/memelet/venv/bin/python3 telegram_bot.py
+EnvironmentFile=/path/to/memelet/.env
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable memelet-telegram
+sudo systemctl start memelet-telegram
+```
+
 ### Behind a Reverse Proxy
 
 Example nginx configuration:
