@@ -254,7 +254,20 @@ def init_database(default_username=None, default_password=None):
     cursor.execute("SELECT value FROM settings WHERE key = 'last_update_check'")
     if cursor.fetchone() is None:
         cursor.execute("INSERT INTO settings (key, value) VALUES ('last_update_check', NULL)")
-    
+
+    # Telegram bot settings
+    cursor.execute("SELECT value FROM settings WHERE key = 'telegram_bot_token'")
+    if cursor.fetchone() is None:
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('telegram_bot_token', '')")
+
+    cursor.execute("SELECT value FROM settings WHERE key = 'telegram_linked_chat_id'")
+    if cursor.fetchone() is None:
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('telegram_linked_chat_id', NULL)")
+
+    cursor.execute("SELECT value FROM settings WHERE key = 'telegram_auth_code'")
+    if cursor.fetchone() is None:
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('telegram_auth_code', NULL)")
+
     # Users table for authentication
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (

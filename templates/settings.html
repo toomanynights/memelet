@@ -300,6 +300,55 @@
             <div id="privacy-mode-message" style="margin-top: 10px;"></div>
         </div>
 
+        <div class="section" id="telegram-section">
+            <h2>🤖 Telegram Bot</h2>
+            {% if is_standalone %}
+            <p class="action-description">
+                Connect a Telegram bot to upload memes and search your library inline from any chat.
+            </p>
+
+            <div id="telegram-privacy-warning" class="message warning" style="display:none; margin-bottom:12px;">
+                ⚠️ Your Memelet is set to <strong>Private</strong>. Telegram inline search requires media URLs to be
+                publicly accessible. Switch to <strong>Public</strong> mode above, or inline results will not display
+                correctly.
+            </div>
+
+            <div class="setting-row">
+                <label for="telegram-token-input">Bot Token</label>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <input type="password" id="telegram-token-input" placeholder="123456:ABC-DEF…"
+                        style="flex:1; font-family:monospace;">
+                    <button class="btn btn-primary" onclick="saveTelegramToken()">Save</button>
+                    <button class="btn" onclick="toggleTokenVisibility()">👁</button>
+                </div>
+                <small style="color:var(--text-muted);">
+                    Create a bot with <a href="https://t.me/BotFather" target="_blank">@BotFather</a> and paste the
+                    token here. Enable inline mode in BotFather to allow <code>@yourbot search</code>.
+                </small>
+            </div>
+
+            <div id="telegram-link-status" style="margin-top:14px;"></div>
+
+            <div id="telegram-link-section" style="display:none; margin-top:14px;">
+                <p style="margin:0 0 8px;">
+                    To link your Telegram account, generate a one-time code and send it to your bot:
+                </p>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <button class="btn btn-primary" onclick="generateTelegramCode()">Generate Link Code</button>
+                    <button class="btn btn-danger" id="telegram-unlink-btn" onclick="unlinkTelegram()"
+                        style="display:none;">Unlink</button>
+                </div>
+                <div id="telegram-code-display" style="margin-top:10px;"></div>
+            </div>
+
+            <div id="telegram-message" style="margin-top:10px;"></div>
+            {% else %}
+            <p class="action-description">
+                Telegram bot integration is available for standalone Memelet installations. Coming soon for managed instances.
+            </p>
+            {% endif %}
+        </div>
+
         <div class="section">
             <h2>Clippy Agent Appearance</h2>
             <p class="action-description">
@@ -1695,6 +1744,113 @@
                 loadVersionInfo();
             }
         });
+
+        // ── Telegram bot settings ──────────────────────────────────────────────
+
+        function loadTelegramSettings() {
+            fetch(`${BASE_URL}/api/settings/telegram`, { credentials: 'same-origin' })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+
+                    const input = document.getElementById('telegram-token-input');
+                    if (data.has_token) input.placeholder = data.token_masked;
+
+                    const warning = document.getElementById('telegram-privacy-warning');
+                    warning.style.display = data.privacy_warning ? 'block' : 'none';
+
+                    const linkSection = document.getElementById('telegram-link-section');
+                    const statusDiv = document.getElementById('telegram-link-status');
+                    const unlinkBtn = document.getElementById('telegram-unlink-btn');
+
+                    if (data.has_token) {
+                        linkSection.style.display = 'block';
+                        if (data.is_linked) {
+                            statusDiv.innerHTML = '<span style="color:var(--success)">✅ Telegram account linked.</span>';
+                            unlinkBtn.style.display = 'inline-block';
+                        } else {
+                            statusDiv.innerHTML = '<span style="color:var(--text-muted)">Not linked yet. Generate a code below.</span>';
+                            unlinkBtn.style.display = 'none';
+                        }
+                    } else {
+                        linkSection.style.display = 'none';
+                        statusDiv.innerHTML = '';
+                    }
+                })
+                .catch(e => console.error('Error loading Telegram settings:', e));
+        }
+
+        function saveTelegramToken() {
+            const token = document.getElementById('telegram-token-input').value.trim();
+            const msgDiv = document.getElementById('telegram-message');
+            if (!token) {
+                msgDiv.innerHTML = '<div class="message error">Please enter a bot token.</div>';
+                return;
+            }
+            fetch(`${BASE_URL}/api/settings/telegram/token`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('telegram-token-input').value = '';
+                        msgDiv.innerHTML = '<div class="message success">Token saved.</div>';
+                        loadTelegramSettings();
+                    } else {
+                        msgDiv.innerHTML = `<div class="message error">${data.error || 'Save failed.'}</div>`;
+                    }
+                    setTimeout(() => { msgDiv.innerHTML = ''; }, 5000);
+                });
+        }
+
+        function generateTelegramCode() {
+            const codeDiv = document.getElementById('telegram-code-display');
+            fetch(`${BASE_URL}/api/settings/telegram/generate-code`, {
+                method: 'POST',
+                credentials: 'same-origin'
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        codeDiv.innerHTML = `
+                            <p>Send this message to your bot:</p>
+                            <code style="font-size:1.3em; letter-spacing:0.1em;">/start ${data.code}</code>
+                            <p style="color:var(--text-muted); font-size:0.85em; margin-top:6px;">
+                                This code expires once used or when you generate a new one.
+                            </p>`;
+                    } else {
+                        codeDiv.innerHTML = `<div class="message error">${data.error}</div>`;
+                    }
+                });
+        }
+
+        function unlinkTelegram() {
+            if (!confirm('Unlink Telegram? You will need to re-link to use the bot.')) return;
+            fetch(`${BASE_URL}/api/settings/telegram/unlink`, {
+                method: 'POST',
+                credentials: 'same-origin'
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) loadTelegramSettings();
+                });
+        }
+
+        function toggleTokenVisibility() {
+            const input = document.getElementById('telegram-token-input');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+
+        // Hook Telegram load into existing DOMContentLoaded logic
+        const _origDCL = document.addEventListener.bind(document);
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadTelegramSettings);
+        } else {
+            loadTelegramSettings();
+        }
     </script>
     <script src="{{ url_for('static', filename='jquery/jquery-3.7.1.min.js') }}"></script>
     <!-- Clippy.js (src modules, load order matters) -->

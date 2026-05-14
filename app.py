@@ -1947,11 +1947,12 @@ def settings():
     # Get base URL for API calls (for multi-tenant support)
     base_url = request.environ.get('SCRIPT_NAME', '')
     
-    return render_template('settings.html', 
-                         log_content=log_content, 
-                         current_agent=current_agent, 
+    return render_template('settings.html',
+                         log_content=log_content,
+                         current_agent=current_agent,
                          username=current_user.username,
-                         base_url=base_url)
+                         base_url=base_url,
+                         is_standalone='INSTANCE_NAME' not in app.config)
 
 @app.route('/api/trigger-scheduled-scan', methods=['POST'])
 @login_required
@@ -3123,6 +3124,89 @@ def set_privacy_mode():
     conn.close()
     
     return jsonify({'success': True, 'privacy_mode': privacy_mode})
+
+
+@app.route('/api/settings/telegram', methods=['GET'])
+@login_required
+def get_telegram_settings():
+    """Get Telegram bot settings (token masked, linked status, privacy warning)"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM settings WHERE key IN ('telegram_bot_token', 'telegram_linked_chat_id', 'privacy_mode')")
+    rows = {r[0]: r[1] for r in cursor.fetchall()}
+    conn.close()
+
+    token = rows.get('telegram_bot_token') or ''
+    linked_chat_id = rows.get('telegram_linked_chat_id')
+    privacy_mode = rows.get('privacy_mode', 'private')
+
+    if token and len(token) > 6:
+        masked_token = token[:4] + '•' * (len(token) - 6) + token[-2:]
+    else:
+        masked_token = token
+
+    return jsonify({
+        'success': True,
+        'has_token': bool(token),
+        'token_masked': masked_token,
+        'is_linked': bool(linked_chat_id),
+        'privacy_warning': privacy_mode == 'private',
+    })
+
+
+@app.route('/api/settings/telegram/token', methods=['POST'])
+@login_required
+def set_telegram_token():
+    """Save Telegram bot token"""
+    data = request.get_json()
+    token = (data.get('token') or '').strip()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_bot_token', ?)", (token,))
+    # Clear link and pending auth code when token changes
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_linked_chat_id', NULL)")
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_auth_code', NULL)")
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/settings/telegram/generate-code', methods=['POST'])
+@login_required
+def generate_telegram_auth_code():
+    """Generate a one-time auth code the user sends to the bot to link their chat"""
+    import secrets
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM settings WHERE key = 'telegram_bot_token'")
+    row = cursor.fetchone()
+    if not row or not (row[0] or '').strip():
+        conn.close()
+        return jsonify({'success': False, 'error': 'Bot token not configured'}), 400
+
+    code = secrets.token_hex(4).upper()  # e.g. "A3F9C201"
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_auth_code', ?)", (code,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'code': code})
+
+
+@app.route('/api/settings/telegram/unlink', methods=['POST'])
+@login_required
+def unlink_telegram():
+    """Unlink the associated Telegram chat"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_linked_chat_id', NULL)")
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('telegram_auth_code', NULL)")
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
 
 def get_file_hash(file_path):
     """Compute SHA256 hash of file contents"""
