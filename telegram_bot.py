@@ -38,6 +38,7 @@ from telegram import (
     InlineQueryResultVideo,
     Update,
 )
+import html
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -65,6 +66,11 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger("memelet.bot")
+
+# ── Album buffering (media_group_id → collected photos) ───────────────────────
+# Each entry: {'files': [(file_id, ext)], 'chat_id': int, 'reply_to_id': int,
+#              'status_msg': Message, 'task': asyncio.Task}
+_album_buffer: dict[str, dict] = {}
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
 
@@ -183,6 +189,54 @@ async def _download_tg_file(bot: Bot, file_id: str, dest_path: Path) -> None:
     await tg_file.download_to_drive(str(dest_path))
 
 
+def _convert_mp4_to_gif(mp4_path: Path) -> Path:
+    """Convert an MP4 file to GIF using OpenCV + Pillow. Returns the new .gif path."""
+    import cv2
+    from PIL import Image
+
+    cap = cv2.VideoCapture(str(mp4_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Could not open video: {mp4_path}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 15
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    # Sample at most 30 frames evenly
+    max_frames = 30
+    step = max(1, total // max_frames)
+
+    frames = []
+    idx = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        if idx % step == 0:
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(frame_rgb)
+            # Scale down to max 480px wide
+            if img.width > 480:
+                img = img.resize((480, int(img.height * 480 / img.width)), Image.LANCZOS)
+            frames.append(img)
+        idx += 1
+    cap.release()
+
+    if not frames:
+        raise RuntimeError("No frames extracted from video")
+
+    gif_path = mp4_path.with_suffix(".gif")
+    frame_duration = max(20, int(1000 / fps * step))  # ms per frame
+    frames[0].save(
+        gif_path,
+        save_all=True,
+        append_images=frames[1:],
+        loop=0,
+        duration=frame_duration,
+        optimize=False,
+    )
+    mp4_path.unlink()
+    return gif_path
+
+
 def _insert_meme(file_path: Path, media_type: str) -> int:
     import hashlib
     sha = hashlib.sha256()
@@ -205,6 +259,30 @@ def _insert_meme(file_path: Path, media_type: str) -> int:
         )
         conn.commit()
         return cursor.lastrowid
+
+
+def _insert_album(album_dir: Path, item_paths: list[Path]) -> int:
+    import hashlib
+    def _hash(p: Path) -> str:
+        sha = hashlib.sha256()
+        with open(p, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                sha.update(chunk)
+        return sha.hexdigest()
+
+    with _db() as conn:
+        cursor = conn.execute(
+            "INSERT INTO memes (file_path, media_type, status) VALUES (?, 'album', 'new')",
+            (str(album_dir.resolve()),),
+        )
+        album_id = cursor.lastrowid
+        for order, path in enumerate(item_paths, start=1):
+            conn.execute(
+                "INSERT INTO album_items (album_id, file_path, display_order, file_hash) VALUES (?,?,?,?)",
+                (album_id, str(path.resolve()), order, _hash(path)),
+            )
+        conn.commit()
+    return album_id
 
 
 # ── tag keyboard builder ───────────────────────────────────────────────────────
@@ -304,7 +382,7 @@ def _extract_media(msg) -> tuple[str, str, str] | None:
     if msg.photo:
         return msg.photo[-1].file_id, ".jpg", "image"
     if msg.animation:
-        return msg.animation.file_id, ".gif", "gif"
+        return msg.animation.file_id, ".mp4", "gif"
     if msg.video:
         return msg.video.file_id, ".mp4", "video"
     if msg.document:
@@ -320,6 +398,78 @@ def _extract_media(msg) -> tuple[str, str, str] | None:
     return None
 
 
+async def _flush_album(group_id: str, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Called after a 2s pause — downloads all buffered photos and creates an album."""
+    await asyncio.sleep(2)
+
+    entry = _album_buffer.pop(group_id, None)
+    if not entry:
+        return
+
+    status_msg = entry["status_msg"]
+    files: list[tuple[str, str]] = entry["files"]  # [(file_id, ext), ...]
+
+    album_dir = Path(get_memes_dir()) / "_telegram" / "_albums" / f"album_tg_{int(time.time())}"
+    album_dir.mkdir(parents=True, exist_ok=True)
+
+    await status_msg.edit_text(f"⏳ Downloading album ({len(files)} images)…")
+
+    item_paths: list[Path] = []
+    for i, (file_id, ext) in enumerate(files, start=1):
+        dest = album_dir / f"{i:03d}{ext}"
+        try:
+            await _download_tg_file(context.bot, file_id, dest)
+            item_paths.append(dest)
+        except Exception as e:
+            logger.warning(f"Album download failed for item {i}: {e}")
+
+    if not item_paths:
+        await status_msg.edit_text("❌ Failed to download any images.")
+        return
+
+    album_id = _insert_album(album_dir, item_paths)
+    await status_msg.edit_text("🤖 Processing album with AI… (this can take up to a minute)")
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _launch_processing, album_id)
+    meme = await loop.run_in_executor(None, _poll_meme, album_id)
+
+    if meme is None:
+        await status_msg.edit_text(
+            "⚠️ Processing is taking longer than expected. The album was saved — "
+            "check the web interface in a moment."
+        )
+        return
+
+    if meme["status"] == "error":
+        await status_msg.edit_text(
+            f"⚠️ Processing failed: {meme['error_message'] or 'unknown error'}.\n"
+            "The album was saved and you can retry from the web interface."
+        )
+        return
+
+    def esc(text: str) -> str:
+        return html.escape(text)
+
+    lines = []
+    if meme["description"]:
+        lines.append(f"📝 <b>Description:</b> {esc(meme['description'])}")
+    if meme["meaning"]:
+        lines.append(f"💡 <b>Meaning:</b> {esc(meme['meaning'])}")
+
+    suggested = _get_meme_tags(album_id)
+    selected_ids = {t["id"] for t in suggested}
+    tag_text = esc(", ".join(t["name"] for t in suggested) if suggested else "none")
+    lines.append(f"\n🏷 <b>Suggested tags:</b>\n{tag_text}")
+    lines.append("<i>Use the buttons below to adjust tags, then tap ✅ Done.</i>")
+
+    await status_msg.edit_text(
+        "\n".join(lines),
+        parse_mode="HTML",
+        reply_markup=_build_tag_keyboard(album_id, selected_ids),
+    )
+
+
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     if not _is_authorised(chat_id):
@@ -327,9 +477,34 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     msg = update.message
-    memes_dir = Path(get_memes_dir())
-    files_dir = memes_dir / "files"
+    files_dir = Path(get_memes_dir()) / "_telegram"
     files_dir.mkdir(parents=True, exist_ok=True)
+
+    # Album detection: Telegram sends grouped photos with the same media_group_id
+    if msg.media_group_id and msg.photo:
+        group_id = msg.media_group_id
+        file_id = msg.photo[-1].file_id
+
+        if group_id not in _album_buffer:
+            status_msg = await msg.reply_text(
+                "📸 Receiving album…", reply_to_message_id=msg.message_id
+            )
+            _album_buffer[group_id] = {
+                "files": [],
+                "status_msg": status_msg,
+                "task": None,
+            }
+
+        _album_buffer[group_id]["files"].append((file_id, ".jpg"))
+
+        # Cancel previous flush task and schedule a new one
+        existing_task = _album_buffer[group_id].get("task")
+        if existing_task:
+            existing_task.cancel()
+        _album_buffer[group_id]["task"] = asyncio.create_task(
+            _flush_album(group_id, context)
+        )
+        return
 
     # Try the message itself, then fall back to the replied-to message
     media = _extract_media(msg)
@@ -349,6 +524,8 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     try:
         await _download_tg_file(context.bot, file_id, dest)
+        if media_type == "gif" and dest.suffix == ".mp4":
+            dest = await asyncio.get_event_loop().run_in_executor(None, _convert_mp4_to_gif, dest)
     except Exception as e:
         await status_msg.edit_text(f"❌ Download failed: {e}")
         return
@@ -375,27 +552,30 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    # Build reply text
+    # Build reply text (HTML — safe with any AI-generated content)
+    def esc(text: str) -> str:
+        return html.escape(text)
+
     lines = []
     if meme["description"]:
-        lines.append(f"📝 *Description:* {meme['description']}")
+        lines.append(f"📝 <b>Description:</b> {esc(meme['description'])}")
     if meme["meaning"]:
-        lines.append(f"💡 *Meaning:* {meme['meaning']}")
+        lines.append(f"💡 <b>Meaning:</b> {esc(meme['meaning'])}")
     if meme["template"]:
-        lines.append(f"🖼 *Template:* {meme['template']}")
+        lines.append(f"🖼 <b>Template:</b> {esc(meme['template'])}")
     if meme["caption"]:
-        lines.append(f"💬 *Caption:* {meme['caption']}")
+        lines.append(f"💬 <b>Caption:</b> {esc(meme['caption'])}")
 
     suggested = _get_meme_tags(meme_id)
     selected_ids = {t["id"] for t in suggested}
 
-    tag_text = ", ".join(t["name"] for t in suggested) if suggested else "none"
-    lines.append(f"\n🏷 *Suggested tags:* {tag_text}")
-    lines.append("_Use the buttons below to adjust tags, then tap ✅ Done._")
+    tag_text = esc(", ".join(t["name"] for t in suggested) if suggested else "none")
+    lines.append(f"\n🏷 <b>Suggested tags:</b>\n{tag_text}")
+    lines.append("<i>Use the buttons below to adjust tags, then tap ✅ Done.</i>")
 
     await status_msg.edit_text(
         "\n".join(lines),
-        parse_mode="Markdown",
+        parse_mode="HTML",
         reply_markup=_build_tag_keyboard(meme_id, selected_ids),
     )
 
@@ -438,10 +618,10 @@ async def handle_tag_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Strip the keyboard, show final confirmation
         text = query.message.text or ""
         # Remove the instruction line
-        text = re.sub(r"\n_Use the buttons.*$", "", text, flags=re.S).strip()
-        text += f"\n\n✅ *Saved with tags:* {tag_names}"
+        text = re.sub(r"\nUse the buttons.*$", "", text, flags=re.S).strip()
+        text += f"\n\n✅ <b>Saved with tags:</b> {html.escape(tag_names)}"
 
-        await query.edit_message_text(text, parse_mode="Markdown")
+        await query.edit_message_text(text, parse_mode="HTML")
 
 
 async def handle_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

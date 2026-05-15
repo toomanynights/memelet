@@ -1443,7 +1443,7 @@ def analyze_meme(file_path, media_type, album_items=None):
             # Extract frames from GIF
             print(f"  → Extracting frames from GIF: {media_url}")
             frame_urls, temp_dir = extract_gif_frames(file_path, max_frames=10)
-            
+
             if not frame_urls:
                 raise Exception("Failed to extract frames from GIF")
             
