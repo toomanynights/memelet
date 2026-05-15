@@ -872,6 +872,15 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                         'message': f'Git fetch failed: {result.stderr}'
                     }
                 
+                # Stash any local modifications and untracked files so pull succeeds
+                subprocess.run(
+                    ['git', 'stash', '--include-untracked'],
+                    cwd=install_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
                 app.logger.info("Pulling latest commits...")
                 result = subprocess.run(
                     ['git', 'pull', 'origin', 'dev'],
@@ -880,6 +889,16 @@ def perform_update(target_version, branch=None, install_dir=None, github_repo=No
                     text=True,
                     timeout=60
                 )
+
+                # Drop the stash regardless of pull result (upstream is source of truth)
+                subprocess.run(
+                    ['git', 'stash', 'drop'],
+                    cwd=install_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+
                 if result.returncode != 0:
                     return {
                         'success': False,
